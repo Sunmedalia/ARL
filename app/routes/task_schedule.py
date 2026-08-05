@@ -45,6 +45,11 @@ class ARLTaskScheduleResult(ARLResource):
         计划任务结果详情查询
         """
         args = self.parser.parse_args()
+        # The persisted field is named ``status``. Keep accepting the legacy
+        # public query name while making the filter actually effective.
+        schedule_status = args.pop('schedule_status', None)
+        if schedule_status:
+            args['status'] = schedule_status
         data = self.build_data(args=args, collection='task_schedule')
 
         return data
@@ -236,4 +241,3 @@ class RecoverARLTaskScheduler(ARLResource):
                 return utils.build_ret(ErrorMsg.Error, {"error": item})
 
         return utils.build_ret(ErrorMsg.Success, ret_data)
-

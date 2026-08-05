@@ -102,6 +102,7 @@ class Config(object):
     AI_MAX_TOOL_ROUNDS = 6
     AI_MAX_RESULTS = 50
     AI_MAX_RESULT_BYTES = 50 * 1024
+    AI_MAX_CONTEXT_BYTES = 100 * 1024
     AI_MAX_STREAMS_PER_SESSION = 2
     AI_RETENTION_DAYS = 90
 
@@ -139,10 +140,14 @@ try:
     Config.AI_ENABLED = bool(ai_config.get("ENABLED", False))
     Config.AI_BASE_URL = ai_config.get("BASE_URL") or Config.AI_BASE_URL
     Config.AI_MODEL = ai_config.get("MODEL") or ""
-    Config.AI_TIMEOUT = int(ai_config.get("TIMEOUT", Config.AI_TIMEOUT))
+    Config.AI_TIMEOUT = min(120, max(1, int(ai_config.get("TIMEOUT", Config.AI_TIMEOUT))))
     Config.AI_MAX_TOOL_ROUNDS = min(6, max(1, int(ai_config.get("MAX_TOOL_ROUNDS", Config.AI_MAX_TOOL_ROUNDS))))
     Config.AI_MAX_RESULTS = min(50, max(1, int(ai_config.get("MAX_RESULTS", Config.AI_MAX_RESULTS))))
     Config.AI_MAX_RESULT_BYTES = min(50 * 1024, max(1024, int(ai_config.get("MAX_RESULT_BYTES", Config.AI_MAX_RESULT_BYTES))))
+    Config.AI_MAX_CONTEXT_BYTES = min(
+        1024 * 1024,
+        max(16 * 1024, int(ai_config.get("MAX_CONTEXT_BYTES", Config.AI_MAX_CONTEXT_BYTES))),
+    )
     Config.AI_MAX_STREAMS_PER_SESSION = min(2, max(1, int(ai_config.get("MAX_STREAMS_PER_SESSION", Config.AI_MAX_STREAMS_PER_SESSION))))
 
     # *** TOP 10 端口设置 ***
@@ -259,3 +264,9 @@ Config.CELERY_BROKER_URL = os.environ.get(
 Config.AI_ENABLED = _env_bool("ARL_AI_ENABLED", Config.AI_ENABLED)
 Config.AI_BASE_URL = os.environ.get("ARL_AI_BASE_URL", Config.AI_BASE_URL)
 Config.AI_MODEL = os.environ.get("ARL_AI_MODEL", Config.AI_MODEL)
+Config.AI_TIMEOUT = min(120, max(1, int(os.environ.get(
+    "ARL_AI_TIMEOUT", Config.AI_TIMEOUT
+))))
+Config.AI_MAX_CONTEXT_BYTES = min(1024 * 1024, max(16 * 1024, int(
+    os.environ.get("ARL_AI_MAX_CONTEXT_BYTES", Config.AI_MAX_CONTEXT_BYTES)
+)))

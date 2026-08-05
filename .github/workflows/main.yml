@@ -3,33 +3,40 @@ name: Daily Update ARL Tools
 on:
   schedule:
     - cron: '0 12 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
-  build:
+  update-tools:
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.x'
-        
-    - name: Update Nuclei
-      run: cd tools && pip install requests && python nuclei_download.py
-      
-    - name: Update GeoLite2-ASN
-      run: cd tools && wget https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-ASN.mmdb -O GeoLite2-ASN.mmdb
-    - name: Update GeoLite2-City
-      run: cd tools && wget https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-City.mmdb -O GeoLite2-City.mmdb
-      
-    - name: Commit and Push changes
-      run: |
-        echo $(date +'%Y%m%d') > date.txt
-        git add .
-        git config --local user.email "admin@adysec.com"
-        git config --local user.name "adysec"
-        git commit -am "$(date +'%Y%m%d')"
-        git push -v --progress
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Update Nuclei
+        working-directory: tools
+        run: |
+          pip install requests==2.34.2
+          python nuclei_download.py
+      - name: Update GeoLite databases
+        working-directory: tools
+        run: |
+          wget https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-ASN.mmdb -O GeoLite2-ASN.mmdb
+          wget https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-City.mmdb -O GeoLite2-City.mmdb
+      - name: Commit and push data changes
+        run: |
+          date +'%Y%m%d' > date.txt
+          git add -- tools/nuclei.zip tools/GeoLite2-ASN.mmdb tools/GeoLite2-City.mmdb date.txt
+          if git diff --cached --quiet; then
+            echo 'No tool-data changes to commit'
+            exit 0
+          fi
+          git config --local user.email 'admin@adysec.com'
+          git config --local user.name 'adysec'
+          git commit -m "$(date +'%Y%m%d')"
+          git push

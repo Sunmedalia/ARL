@@ -1,14 +1,19 @@
 <script setup lang="ts">
+import { Button as _AButtonImpl, Input as _AInputImpl, InputPassword as _AInputPasswordImpl } from 'ant-design-vue'
+const AButton: any = _AButtonImpl
+const AInput: any = _AInputImpl
+const AInputPassword: any = _AInputPasswordImpl
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { useAuthStore } from '../stores/auth'
+import { safeRedirect } from '../router'
 
 const username = ref(''); const password = ref(''); const loading = ref(false)
-const auth = useAuthStore(); const router = useRouter()
+const auth = useAuthStore(); const router = useRouter(); const route = useRoute()
 async function login() {
   loading.value = true
-  try { await auth.login(username.value, password.value); await router.replace('/') }
+  try { await auth.login(username.value.trim(), password.value); await router.replace(safeRedirect(String(route.query.redirect || '')) || '/') }
   catch (error) { message.error(error instanceof Error ? error.message : '登录失败') }
   finally { loading.value = false }
 }

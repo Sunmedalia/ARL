@@ -6,6 +6,7 @@ from werkzeug.security import generate_password_hash
 
 from app.utils import arl_update
 from app.utils.conn import conn_db
+from app.auth_session import normalize_username
 
 
 def main():
@@ -16,12 +17,22 @@ def main():
 
     users = conn_db("user")
     users.create_index("username", unique=True)
-    existing = users.find_one({"username": username})
+    username_normalized = normalize_username(username)
+    existing = users.find_one({"username_normalized": username_normalized})
+    if not existing:
+        existing = users.find_one({"username": username})
     if existing:
+        existing_query = ({"_id": existing["_id"]} if existing.get("_id") else {
+            "username": existing["username"]
+        })
+        users.update_one(existing_query, {"$set": {
+            "username_normalized": normalize_username(existing["username"])
+        }})
         print("ARL administrator already exists; keeping the current password")
     else:
         users.insert_one({
             "username": username,
+            "username_normalized": username_normalized,
             "password_hash": generate_password_hash(password, method="scrypt"),
             "token": None,
         })

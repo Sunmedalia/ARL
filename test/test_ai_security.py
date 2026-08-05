@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 from app.config import Config
 from app.services.ai import store
-from app.services.ai.chat import AIChatService
+from app.services.ai.chat import AIChatService, bounded_context, context_size
 from app.services.ai.tools import execute_tool, validate_task_options
 
 
@@ -98,10 +98,57 @@ class TestAISecurity(unittest.TestCase):
             raise TimeoutError("secret upstream detail")
         client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=fail)))
         service = _TextChat(client=client)
-        with patch("app.services.ai.chat.store.add_message"):
+        with patch("app.services.ai.chat.store.add_message"), \
+                patch("app.services.ai.chat.logger.exception") as log_exception:
             events = list(service.stream("conversation", "admin", "session", "状态"))
         self.assertEqual(events[-1]["event"], "error")
+        self.assertEqual(events[-1]["data"]["error_code"], "MODEL_CALL_FAILED")
         self.assertNotIn("secret", events[-1]["data"]["message"])
+        log_exception.assert_called_once()
+
+    def test_context_budget_keeps_system_latest_user_and_recent_tool_result(self):
+        messages = [
+            {"role": "system", "content": "system"},
+            {"role": "assistant", "content": "old" * 1000},
+            {"role": "user", "content": "latest question"},
+            {"role": "assistant", "content": None, "tool_calls": [{
+                "id": "call-1", "type": "function",
+                "function": {"name": "list_tasks", "arguments": "{}"},
+            }]},
+            {"role": "tool", "tool_call_id": "call-1", "content": "recent result" * 1000},
+        ]
+        bounded = bounded_context(messages, budget=900)
+        self.assertLessEqual(context_size(bounded), 900)
+        self.assertEqual(bounded[0]["role"], "system")
+        self.assertTrue(any(item.get("content") == "latest question" for item in bounded))
+        self.assertTrue(any(item.get("role") == "tool" for item in bounded))
+        self.assertFalse(any(item.get("content") == "old" * 1000 for item in bounded))
+
+    def test_tool_exception_is_logged_but_not_returned_to_client(self):
+        tool_call = SimpleNamespace(index=0, id="call-1", function=SimpleNamespace(
+            name="list_tasks", arguments="{}"
+        ))
+        first = [SimpleNamespace(choices=[SimpleNamespace(
+            delta=SimpleNamespace(content=None, tool_calls=[tool_call])
+        )])]
+        second = [SimpleNamespace(choices=[SimpleNamespace(
+            delta=SimpleNamespace(content="done", tool_calls=[])
+        )])]
+        streams = iter([iter(first), iter(second)])
+        client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(
+            create=lambda **kwargs: next(streams)
+        )))
+        service = _TextChat(client=client)
+        with patch("app.services.ai.chat.store.add_message"), \
+                patch("app.services.ai.chat.store.grant_exists", return_value=False), \
+                patch("app.services.ai.chat.store.audit_action"), \
+                patch("app.services.ai.chat.execute_tool", side_effect=RuntimeError("db password leaked")), \
+                patch("app.services.ai.chat.logger.exception") as log_exception:
+            events = list(service.stream("conversation", "admin", "session", "status"))
+        result = next(item["data"]["result"] for item in events if item["event"] == "tool_result")
+        self.assertEqual(result["error_code"], "TOOL_EXECUTION_FAILED")
+        self.assertNotIn("password", str(result))
+        log_exception.assert_called_once()
 
 
 if __name__ == "__main__":

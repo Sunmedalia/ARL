@@ -1,96 +1,65 @@
-# syntax=docker/dockerfile:1
-FROM ubuntu:20.04 AS builder
-ENV DEBIAN_FRONTEND noninteractive
-WORKDIR /opt/
-RUN set -x;\
-    apt-get update \
-    && apt-get install -y g++ make wget  libssl-dev zlib1g-dev git \
-    && git clone https://github.com/blechschmidt/massdns.git \
-    && cd /opt/massdns \
-    && make \
-    && /opt/massdns/bin/massdns --version \
-    && cd /opt/ \
-    && wget https://nmap.org/ncrack/dist/ncrack-0.7.tar.gz --no-check-certificate \
-    && tar -xzf ncrack-0.7.tar.gz \
-    && cd ncrack-0.7 \
+# ARM64 scanner compatibility image. API/AI and gateway use their dedicated
+# lightweight images; this image contains only worker runtime and scanners.
+ARG PYTHON_IMAGE=python:3.11.12-slim-bookworm
+
+FROM ubuntu:20.04 AS scanner-builder
+ARG DEBIAN_FRONTEND=noninteractive
+ARG NUCLEI_VERSION=3.2.4
+ARG NUCLEI_SHA256=11392e74a90f994c643a5b007b5ee7edfb14d60acbc40c7ec6e99e585381ea7a
+ARG MASSDNS_COMMIT=6bfa47197d78e68b79041d494e280174cb2d6ae1
+WORKDIR /opt
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates g++ git libssl-dev make wget zlib1g-dev unzip \
+    && git init /opt/massdns \
+    && git -C /opt/massdns remote add origin https://github.com/blechschmidt/massdns.git \
+    && git -C /opt/massdns fetch --depth 1 origin "$MASSDNS_COMMIT" \
+    && git -C /opt/massdns checkout --detach FETCH_HEAD \
+    && make -C /opt/massdns \
+    && wget -q "https://nmap.org/ncrack/dist/ncrack-0.7.tar.gz" \
+    && echo "f3f971cd677c4a0c0668cb369002c581d305050b3b0411e18dd3cb9cc270d14a  ncrack-0.7.tar.gz" | sha256sum -c - \
+    && tar -xzf "ncrack-0.7.tar.gz" \
+    && cd "ncrack-0.7" \
     && ./configure \
     && make \
-    && /opt/ncrack-0.7/ncrack -V
+    && wget -q "https://github.com/projectdiscovery/nuclei/releases/download/v${NUCLEI_VERSION}/nuclei_${NUCLEI_VERSION}_linux_arm64.zip" -O /tmp/nuclei.zip \
+    && echo "$NUCLEI_SHA256  /tmp/nuclei.zip" | sha256sum -c - \
+    && unzip /tmp/nuclei.zip nuclei -d /opt \
+    && chmod +x /opt/nuclei
 
-FROM node:22-bookworm-slim AS frontend-builder
-WORKDIR /frontend
-COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci
-COPY frontend/ ./
-RUN npm run build
+FROM ${PYTHON_IMAGE} AS python-builder
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1
+WORKDIR /build
+COPY requirements.txt ./requirements.txt
+COPY tools/ARL-NPoC/ ./ARL-NPoC/
+RUN python -m pip install --no-cache-dir -r requirements.txt \
+    && python -m pip install --no-cache-dir -r ARL-NPoC/requirements.txt \
+    && python -m pip install --no-cache-dir ./ARL-NPoC
 
-
-FROM python:3.11-slim-bookworm
-ENV DEBIAN_FRONTEND=noninteractive
-ENV LANG=C.UTF-8
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
-
+FROM ${PYTHON_IMAGE}
+ENV LANG=C.UTF-8 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
 WORKDIR /code
-
-RUN set -x;\
-    apt-get update \
-    && apt-get install -y --no-install-recommends build-essential curl nginx nmap wget unzip \
-    && useradd -s /bin/false nginx \
-    && nmap -v \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        fontconfig fonts-wqy-microhei nmap \
     && rm -rf /var/lib/apt/lists/*
-
+COPY --from=python-builder /usr/local /usr/local
 COPY app/ app/
-COPY test/ test/
-COPY --from=builder /opt/ncrack-0.7/ncrack /usr/local/bin/ncrack
-COPY --from=builder /opt/ncrack-0.7/ncrack-services /usr/local/share/ncrack/ncrack-services
-COPY --from=builder /opt/massdns/bin/massdns app/tools/massdns
-COPY docker/frontend/ frontend/
-COPY --from=frontend-builder /frontend/dist/ frontend-next/
-COPY docker/nginx.conf  /etc/nginx/nginx.conf
-
-## 复制生成ssl证书文件
-COPY docker/worker/gen_crt.sh /usr/bin/gen_crt.sh
-## 复制 wait-for-it
-COPY docker/worker/wait-for-it.sh /usr/bin/wait-for-it.sh
-
-## 复制npoc 并安装
-COPY tools/ARL-NPoC/ /opt/ARL-NPoC/
-WORKDIR /opt/ARL-NPoC/
-RUN python -m pip install -e .
-
-WORKDIR /code
-RUN curl https://ssl-config.mozilla.org/ffdhe2048.txt -o /etc/ssl/certs/dhparam.pem
-COPY requirements.txt requirements.txt
+COPY arl_tool/ arl_tool/
+COPY --from=scanner-builder /opt/ncrack-0.7/ncrack /usr/local/bin/ncrack
+COPY --from=scanner-builder /opt/ncrack-0.7/ncrack-services /usr/local/share/ncrack/ncrack-services
+COPY --from=scanner-builder /opt/massdns/bin/massdns app/tools/massdns
+COPY --from=scanner-builder /opt/nuclei /usr/bin/nuclei
+COPY tools/wih/wih_linux_arm64 /usr/bin/wih
 COPY tools/GeoLite2-ASN.mmdb /data/GeoLite2/GeoLite2-ASN.mmdb
 COPY tools/GeoLite2-City.mmdb /data/GeoLite2/GeoLite2-City.mmdb
-RUN python -m pip install -r requirements.txt
-
-
-## 安装 NPoC 的依赖
-WORKDIR /opt/ARL-NPoC/
-RUN python -m pip install -r requirements.txt
-
-# 定义nuclei版本
-ARG NUCLEI_VERSION=3.2.4
-
-# 安装nuclei
-RUN wget "https://github.com/projectdiscovery/nuclei/releases/download/v${NUCLEI_VERSION}/nuclei_${NUCLEI_VERSION}_linux_arm64.zip" \
-    && unzip "nuclei_${NUCLEI_VERSION}_linux_arm64.zip" nuclei \
-    && mv nuclei /usr/bin/ \
-    && rm -f "nuclei_${NUCLEI_VERSION}_linux_arm64.zip"
-
-# 运行nuclei
-RUN nuclei -ut
-
-## 安装 WIH
-RUN wget https://github.com/1c3z/arl_files/raw/master/wih/wih_linux_arm64 -O /usr/bin/wih && chmod +x /usr/bin/wih
-RUN wih --version
-
-## 切换工作目录
-WORKDIR /code
-
-## 自测一下
-RUN cp app/config.yaml.example app/config.yaml
-RUN env FLASK_APP=app.main:arl_app python -m flask routes
-RUN python -m app.celerytask
+RUN echo "92b31cc60ee9223bead4b74dd4ecc2c7179c0ed9333689558c7cbc86325b540b  /usr/bin/wih" | sha256sum -c - \
+    && chmod +x /usr/local/bin/ncrack /usr/bin/nuclei /usr/bin/wih app/tools/* \
+    && ln -s /code/app/tools/phantomjs /usr/bin/phantomjs \
+    && cp app/config.yaml.example app/config.yaml \
+    && mkdir -p app/tmp app/tmp_screenshot /root/nuclei-templates \
+    && chown root:10001 app/tmp app/tmp_screenshot \
+    && chmod 0770 app/tmp app/tmp_screenshot
+RUN FLASK_APP=app.main:arl_app python -m flask routes >/dev/null

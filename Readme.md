@@ -100,7 +100,7 @@ AI 服务与普通 API 分离；模型服务不可用时，不影响资产查询
 
 ## Docker Compose 一键启动
 
-这是推荐的全新部署方式。Compose 会启动 MongoDB、RabbitMQ、普通 API、AI 服务、两个 Celery Worker、调度器和 HTTPS 网关。
+这是推荐的全新部署方式。Compose 会启动 MongoDB、RabbitMQ、普通 API、AI 服务、两个 Celery Worker、调度器和 HTTPS 网关。网关、API/AI 与扫描 Worker 使用独立镜像，只有扫描 Worker 包含 x86 扫描器并保留 `NET_RAW`、`NET_ADMIN` 能力。
 
 建议使用 Docker Engine 24+ 与 Docker Compose 2.20+。
 
@@ -153,7 +153,7 @@ docker compose logs -f init api worker gateway
 - 旧版控制台：`https://服务器IP:5003/`；
 - 新版控制台：`https://服务器IP:5003/next/`。
 
-网关首次启动会生成自签名 TLS 证书，浏览器会提示证书不受信任。生产环境应替换为受信任证书。
+网关首次启动会生成自签名 TLS 证书，浏览器会提示证书不受信任。生产环境可将受信任证书以 `docker/certs/arl.crt` 和 `docker/certs/arl.key` 只读挂载；启动脚本会复制到证书卷，私钥不得提交；Linux 主机上证书文件需对网关 UID/GID `10001:10001` 可读。
 
 初始管理员来自 `.env`：
 
@@ -181,6 +181,14 @@ docker compose down -v
 
 > `down -v` 不可恢复，请先备份 MongoDB 数据。
 
+可选备份 profile 会定期把压缩的 `mongodump` 存入 `mongo_backups` 卷，周期与保留天数由 `.env` 控制：
+
+```bash
+docker compose --profile backup up -d mongo-backup
+```
+
+Compose 还通过 `.env` 中的 `ARL_*_CPUS`、`ARL_*_MEMORY` 和 `ARL_LOG_*` 参数提供资源上限与日志轮转。
+
 ### 5. 启用 AI
 
 在 `.env` 中设置：
@@ -198,7 +206,7 @@ ARL_AI_API_KEY=your-api-key
 docker compose up -d --force-recreate ai gateway
 ```
 
-Compose 默认使用 `linux/amd64` 应用镜像，因为仓库内的 PhantomJS、MassDNS、Ncrack 和 Nuclei 是 x86_64 二进制。在 ARM64 主机上需要 Docker 的 amd64 模拟支持。
+扫描 Worker 默认使用 `linux/amd64`，因为仓库内的 PhantomJS、MassDNS、Ncrack 和 Nuclei 是 x86_64 二进制；API、AI、调度器和网关均使用轻量、非 root 镜像。在 ARM64 主机上只有扫描 Worker 需要 Docker 的 amd64 模拟支持。
 
 ## 快速开始
 
@@ -286,12 +294,14 @@ sudo bash misc/setup-arl.sh
 
 仓库保留以下容器构建文件：
 
-- `docker/worker/Dockerfile`：x86_64 构建；
-- `docker/ARMWorker/Dockerfile`：ARM64 构建；
-- `docker/nginx.conf`：容器内 Nginx 配置；
+- `docker/api/Dockerfile`：API、AI、调度器与 GitHub Worker 的轻量非 root 镜像；
+- `docker/gateway/Dockerfile`：只包含新旧静态控制台与 Nginx 的非 root 网关镜像；
+- `docker/worker/Dockerfile`：包含扫描工具的 x86_64 Worker 镜像；
+- `docker/ARMWorker/Dockerfile`：ARM64 扫描 Worker 兼容构建；
+- `docker/compose/nginx.conf`：网关 Nginx 配置；
 - `docker/config-docker.yaml`：容器配置示例。
 
-根目录 `compose.yaml` 是标准启动入口，`docker/docker-compose.yml` 是兼容入口。构建上下文需要包含 `tools/` 下的扫描器、GeoIP 数据和 NPoC 依赖。生产环境应通过 `.env`、只读配置挂载或密钥管理系统注入配置，避免将密码和 Token 写入镜像。
+根目录 `compose.yaml` 是标准启动入口，`docker/docker-compose.yml` 是兼容入口。只有扫描 Worker 的构建上下文需要 `tools/` 下的扫描器和 GeoIP 数据；API 镜像只保留 Python/NPoC 运行依赖。生产环境应通过 `.env`、只读配置挂载或密钥管理系统注入配置，避免将密码和 Token 写入镜像。
 
 ### 初始管理员
 
@@ -313,7 +323,11 @@ sudo bash misc/setup-arl.sh
 | `/` | 迁移期继续提供旧版控制台 |
 | `/api/doc` | REST API 文档 |
 
-新版控制台覆盖资产、任务、资产组、监控、策略、计划任务、指纹、PoC、漏洞、GitHub 和 AI 页面。统一 API 客户端负责会话失效、CSRF、分页、请求取消和 SSE 解析。
+> **迁移预览状态：** 新版控制台正在 `/next/` 进行功能验收，尚未替代生产入口。验收期间 `/` 与 `/legacy/` 均继续提供旧版控制台；只有关键操作矩阵通过后才会评估切换根路径。
+
+当前迁移预览已提供资产、任务、资产组、监控、策略、计划任务、指纹、PoC、漏洞、GitHub 和 AI 页面。统一 API 客户端负责会话失效、CSRF、分页、请求取消和 SSE 解析。
+
+普通列表接口默认每页 20 条，`size` 最大为 100；完整数据请使用对应的服务端导出操作。部署升级后可运行 `python -m arl_tool.explain_indexes`，使用 MongoDB `explain()` 检查任务、资产组、状态和 `_id` 排序查询是否命中新索引。
 
 前端开发服务器：
 
@@ -339,6 +353,7 @@ AI:
   MAX_TOOL_ROUNDS: 6
   MAX_RESULTS: 50
   MAX_RESULT_BYTES: 51200
+  MAX_CONTEXT_BYTES: 102400
   MAX_STREAMS_PER_SESSION: 2
 ```
 
@@ -349,7 +364,7 @@ AI:
 ```bash
 export ARL_AI_API_KEY='your-api-key'
 gunicorn -b 127.0.0.1:5014 app.ai_main:ai_app \
-  -w 2 --threads 4 --worker-class gthread --timeout 130
+  -w 2 --threads 4 --worker-class gthread --timeout 160
 ```
 
 systemd 部署可创建仅管理员可读的 `/etc/arl/ai.env`：
@@ -454,11 +469,15 @@ bash misc/manage.sh log
 ### 后端
 
 ```bash
+# 默认套件完全离线
 python -m unittest discover -s test -p 'test_*.py'
-python -m compileall app test
+python -m compileall app arl_tool test
+
+# 仅在 MongoDB、RabbitMQ、网络与扫描器均已准备时运行
+python -m unittest discover -s test/integration -p 'integration_*.py'
 ```
 
-部分测试依赖 MongoDB、RabbitMQ、外部 API 或打包扫描器。提交时应注明未提供的服务和预期的外部失败。
+依赖 MongoDB、RabbitMQ、外部 API 或打包扫描器的用例已归入 `test/integration/`，不会被默认离线套件收集。
 
 ### 前端
 

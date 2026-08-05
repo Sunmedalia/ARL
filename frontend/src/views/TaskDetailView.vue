@@ -1,24 +1,25 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { Button as _AButtonImpl, InputSearch as _AInputSearchImpl, Pagination as _APaginationImpl, Skeleton as _ASkeletonImpl, TabPane as _ATabPaneImpl, Table as _ATableImpl, Tabs as _ATabsImpl, Tag as _ATagImpl } from 'ant-design-vue'
+const AButton: any = _AButtonImpl
+const AInputSearch: any = _AInputSearchImpl
+const APagination: any = _APaginationImpl
+const ASkeleton: any = _ASkeletonImpl
+const ATabPane: any = _ATabPaneImpl
+const ATable: any = _ATableImpl
+const ATabs: any = _ATabsImpl
+const ATag: any = _ATagImpl
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import PageHeader from '../components/PageHeader.vue'
-import { apiRequest, queryString } from '../api/client'
-
-const route = useRoute(); const router = useRouter(); const task = ref<Record<string, any>>({}); const loading = ref(true)
-const resultTypes = [
-  ['domain','域名'], ['ip','IP'], ['site','站点'], ['service','服务'], ['url','URL'], ['vuln','漏洞'], ['nuclei_result','Nuclei'], ['fileleak','文件泄漏'], ['wih','信息猎手'],
-]
-const active = ref('domain'); const rows = ref<Record<string, any>[]>([]); const resultLoading = ref(false)
-async function loadResults() { resultLoading.value = true; try { const data = await apiRequest<any>(`/api/${active.value}/` + queryString({task_id: route.params.id, page: 1, size: 50})); rows.value = data.items || [] } catch (e) { message.error((e as Error).message) } finally { resultLoading.value = false } }
-onMounted(async () => { try { const data = await apiRequest<any>('/api/task/' + queryString({_id: route.params.id, size: 1})); task.value = data.items?.[0] || {}; await loadResults() } finally { loading.value = false } })
+import { apiRequest, downloadRequest, queryString } from '../api/client'
+import { DownloadOutlined, ReloadOutlined } from '@ant-design/icons-vue'
+const route=useRoute();const router=useRouter();const id=String(route.params.id);const task=ref<any>({});const loading=ref(true);const active=ref('domain');const rows=ref<any[]>([]);const total=ref(0);const page=ref(1);const size=ref(20);const resultLoading=ref(false);const search=ref('')
+const configs:any={domain:{label:'域名',field:'domain',columns:[['域名','domain'],['类型','type'],['解析地址','ips'],['来源','source']]},ip:{label:'IP',field:'ip',columns:[['IP','ip'],['类型','ip_type'],['端口','port_info'],['操作系统','os_info']]},site:{label:'站点',field:'site',columns:[['站点','site'],['标题','title'],['状态','status'],['指纹','finger']]},service:{label:'服务',field:'service_name',columns:[['服务','service_name'],['探测信息','service_info']]},url:{label:'URL',field:'url',columns:[['URL','url'],['状态','status_code'],['标题','title'],['来源','source']]},vuln:{label:'漏洞',field:'vul_name',columns:[['漏洞','vul_name'],['目标','target'],['应用','app_name'],['插件','plg_name']]},nuclei_result:{label:'Nuclei',field:'vuln_name',columns:[['名称','vuln_name'],['严重性','vuln_severity'],['URL','vuln_url'],['模板','template_id']]},fileleak:{label:'文件泄漏',field:'url',columns:[['URL','url'],['状态','status_code'],['标题','title'],['长度','content_length']]},wih:{label:'信息猎手',field:'content',columns:[['内容','content'],['类型','record_type'],['来源','source'],['站点','site']]}}
+const current=computed(()=>configs[active.value])
+async function loadTask(){const data=await apiRequest<any>('/api/task/'+queryString({_id:id,size:1}));task.value=data.items?.[0]||{}}
+async function loadResults(){resultLoading.value=true;try{const data=await apiRequest<any>(`/api/${active.value}/`+queryString({task_id:id,[current.value.field]:search.value,page:page.value,size:size.value}));rows.value=data.items||[];total.value=data.total||0}catch(e){message.error((e as Error).message)}finally{resultLoading.value=false}}
+async function exportResult(){const type=active.value==='nuclei_result'?'':active.value;const allowed=['domain','ip','site','url','wih'];if(!allowed.includes(type))return message.info('该结果类型暂无服务端导出接口');await downloadRequest(`/api/batch_export/${type}/`,`${task.value.name||id}-${type}.txt`,{method:'POST',body:JSON.stringify({task_id:[id]})})}
+watch(active,()=>{page.value=1;search.value='';loadResults()});onMounted(async()=>{try{await loadTask();await loadResults()}finally{loading.value=false}})
 </script>
-<template>
-  <section class="page">
-    <PageHeader eyebrow="RECON / TASK DETAIL" :title="task.name || '任务详情'" :description="task.target"><a-button @click="router.back()">返回</a-button></PageHeader>
-    <a-skeleton v-if="loading" active/>
-    <template v-else><div class="task-summary data-panel"><div><span>状态</span><a-tag color="blue">{{ task.status }}</a-tag></div><div><span>类型</span><strong>{{ task.type || '—' }}</strong></div><div><span>开始</span><strong>{{ task.start_time || '—' }}</strong></div><div><span>结束</span><strong>{{ task.end_time || '—' }}</strong></div></div>
-      <div class="data-panel result-panel"><a-tabs v-model:active-key="active" @change="loadResults"><a-tab-pane v-for="([key,label]) in resultTypes" :key="key" :tab="label"/></a-tabs><a-table :data-source="rows" :loading="resultLoading" :pagination="false" row-key="_id" :scroll="{x:900}"><a-table-column title="记录" key="record"><template #default="{record}"><code>{{ JSON.stringify(record, null, 2) }}</code></template></a-table-column></a-table></div>
-    </template>
-  </section>
-</template>
+<template><section class="page"><PageHeader eyebrow="RECON / TASK DETAIL" :title="task.name||'任务详情'" :description="task.target"><a-button @click="router.back()">返回</a-button><a-button @click="loadTask();loadResults()"><ReloadOutlined/>刷新</a-button><a-button @click="exportResult"><DownloadOutlined/>导出当前类型</a-button></PageHeader><a-skeleton v-if="loading" active/><template v-else><div class="task-summary data-panel"><div><span>状态</span><a-tag color="blue">{{task.status}}</a-tag></div><div><span>类型</span><strong>{{task.type||'—'}}</strong></div><div><span>开始</span><strong>{{task.start_time||'—'}}</strong></div><div><span>结束</span><strong>{{task.end_time||'—'}}</strong></div></div><div class="data-panel result-panel"><a-tabs v-model:active-key="active"><a-tab-pane v-for="(config,key) in configs" :key="key" :tab="`${config.label}${task.statistic?.[`${String(key).replace('_result','')}_cnt`]!==undefined?` (${task.statistic[`${String(key).replace('_result','')}_cnt`]})`:''}`"/></a-tabs><div class="query-strip"><a-input-search v-model:value="search" :placeholder="`搜索${current.label}`" allow-clear @search="page=1;loadResults()"/><span><b>{{total}}</b> 条</span></div><a-table :data-source="rows" :loading="resultLoading" :pagination="false" row-key="_id" :scroll="{x:900}" :columns="current.columns.map((x:any)=>({title:x[0],dataIndex:x[1]}))"><template #bodyCell="{column,record}"><span class="cell-value">{{typeof record[column.dataIndex]==='object'?JSON.stringify(record[column.dataIndex]):record[column.dataIndex]??'—'}}</span></template></a-table><a-pagination :current="page" :page-size="size" :total="total" show-size-changer :show-total="(n:number)=>`共 ${n} 条`" @change="(p:number,s:number)=>{page=p;size=s;loadResults()}"/></div></template></section></template>

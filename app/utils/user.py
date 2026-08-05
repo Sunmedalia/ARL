@@ -1,4 +1,5 @@
 import functools
+import re
 
 from flask import request
 from werkzeug.security import generate_password_hash
@@ -13,29 +14,47 @@ salt = "arlsalt!@#"
 
 
 def user_login(username=None, password=None):
-    if not username or not password:
+    username_normalized = session_service.normalize_username(username)
+    if not username_normalized or len(username_normalized) > 128 or not password:
         return None
     ip = session_service.client_ip()
-    if session_service.login_is_limited(username, ip):
+    if session_service.login_is_limited(username_normalized, ip):
         return {"_error": "too many login attempts", "_status": 429}
 
-    user = conn_db("user").find_one({"username": username})
+    users = conn_db("user")
+    user = users.find_one({"username_normalized": username_normalized})
+    if not user:
+        user = users.find_one({
+            "username": {"$regex": "^{}$".format(re.escape(username_normalized)), "$options": "i"}
+        })
+    if not user:
+        # One legacy administrator can predate the normalized lookup field.
+        # The collection is intentionally tiny, so this bounded migration
+        # fallback safely handles Unicode compatibility forms once.
+        for candidate in users.find({}, {"username": 1, "password": 1, "password_hash": 1}):
+            if session_service.normalize_username(candidate.get("username")) == username_normalized:
+                user = candidate
+                break
     valid, legacy = session_service.verify_password(user or {}, password)
     if not valid:
-        session_service.record_failed_login(username, ip)
+        session_service.record_failed_login(username_normalized, ip)
         return None
 
-    session_service.clear_failed_logins(username, ip)
+    canonical_username = user.get("username", username_normalized)
+    session_service.clear_failed_logins(username_normalized, ip)
+    users.update_one({"_id": user["_id"]}, {"$set": {
+        "username_normalized": session_service.normalize_username(canonical_username)
+    }})
     if legacy:
         session_service.upgrade_password(user, password)
 
     # Keep issuing the historical header token for one migration cycle.  It is
     # never accepted by the AI service.
     legacy_token = gen_md5(random_choices(50))
-    conn_db("user").update_one({"_id": user["_id"]}, {"$set": {"token": legacy_token}})
-    session_token, csrf_token = session_service.create_session(username)
+    users.update_one({"_id": user["_id"]}, {"$set": {"token": legacy_token}})
+    session_token, csrf_token = session_service.create_session(canonical_username)
     return {
-        "username": username,
+        "username": canonical_username,
         "token": legacy_token,
         "type": "login",
         "csrf_token": csrf_token,

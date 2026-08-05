@@ -1,10 +1,11 @@
 import re
-from flask_restx import Resource, reqparse, fields
+from flask_restx import Resource, reqparse, fields, abort
 from bson.objectid import ObjectId
 from datetime import datetime
 from urllib.parse import quote
 from flask import make_response
 import time
+import json
 
 from app.utils import conn_db as conn
 
@@ -14,8 +15,14 @@ base_query_fields = {
     'order': fields.String(description="排序字段", example='_id'),
 }
 
+DEFAULT_PAGE_SIZE = 20
+MAX_PAGE_SIZE = 100
+
 # 只能用等号进行mongo查询的字段
-EQUAL_FIELDS = ["task_id", "task_tag", "ip_type", "scope_id", "type"]
+EQUAL_FIELDS = [
+    "task_id", "github_task_id", "github_scheduler_id", "task_tag",
+    "ip_type", "scope_id", "type", "status",
+]
 
 
 class ARLResource(Resource):
@@ -161,24 +168,23 @@ class ARLResource(Resource):
     def get_default_field(self, args):
         default_field_map = {
             "page": 1,
-            "size": 10,
+            "size": DEFAULT_PAGE_SIZE,
             "order": "-_id"
         }
 
         ret = default_field_map.copy()
 
         for x in default_field_map:
-            if x in args and args[x]:
-                ret[x] = args.pop(x)
-                if x == "size":
-                    if ret[x] <= 0:
-                        ret[x] = 10
-                    if ret[x] >= 100000:
-                        ret[x] = 100000
+            if x in args and args[x] is not None:
+                value = args.pop(x)
+                if x == "order" and not value:
+                    continue
+                ret[x] = value
+                if x == "size" and not 1 <= ret[x] <= MAX_PAGE_SIZE:
+                    abort(400, "size must be between 1 and {}".format(MAX_PAGE_SIZE))
 
-                if x == "page":
-                    if ret[x] <= 0:
-                        ret[x] = 1
+                if x == "page" and ret[x] <= 0:
+                    abort(400, "page must be greater than zero")
 
         orderby_list = []
         orderby_field = ret.get("order", "-_id")
@@ -207,7 +213,11 @@ class ARLResource(Resource):
             "cip": "cidr_ip",
             "wih": "content",
         }
-        data = self.build_data(args=args, collection=_type)["items"]
+        export_args = dict(args or {})
+        for key in base_query_fields:
+            export_args.pop(key, None)
+        query = self.build_db_query(export_args)
+        data = conn(_type).find(query)
         items_set = set()
         for item in data:
             filed_name = _type_map_field_name.get(_type, "")
@@ -223,7 +233,11 @@ class ARLResource(Resource):
 
     # 表示从 给定集合中 导出相应的字段来
     def send_export_file_attr(self, args, collection, field):
-        data = self.build_data(args=args, collection=collection)["items"]
+        export_args = dict(args or {})
+        for key in base_query_fields:
+            export_args.pop(key, None)
+        query = self.build_db_query(export_args)
+        data = conn(collection).find(query)
         items_set = set()
         for item in data:
             if field in item:
@@ -234,6 +248,21 @@ class ARLResource(Resource):
                     items_set.add(value)
 
         return self.send_file(items_set, f"{collection}_{field}")
+
+    def send_jsonl_export(self, args, collection):
+        """Export every matched record without flattening nested scanner data."""
+        export_args = dict(args or {})
+        for key in base_query_fields:
+            export_args.pop(key, None)
+        query = self.build_db_query(export_args)
+        items = list(conn(collection).find(query))
+        content = "\n".join(json.dumps(item, ensure_ascii=False, default=str) for item in items)
+        response = make_response(content)
+        filename = "{}_{}_{}.jsonl".format(collection, len(items), int(time.time()))
+        response.headers['Content-Type'] = 'application/x-ndjson; charset=utf-8'
+        response.headers['Access-Control-Expose-Headers'] = 'Content-Disposition'
+        response.headers['Content-Disposition'] = 'attachment; filename={}'.format(quote(filename))
+        return response
 
     def send_batch_export_file(self, task_id_list, _type):
         _type_map_field_name = {

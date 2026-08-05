@@ -1,5 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { Layout as _ALayoutImpl, LayoutContent as _ALayoutContentImpl, LayoutSider as _ALayoutSiderImpl, Menu as _AMenuImpl } from 'ant-design-vue'
+const ALayout: any = _ALayoutImpl
+const ALayoutContent: any = _ALayoutContentImpl
+const ALayoutSider: any = _ALayoutSiderImpl
+const AMenu: any = _AMenuImpl
+import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from './stores/auth'
 import {
@@ -11,10 +16,6 @@ import {
 const route = useRoute(); const router = useRouter(); const auth = useAuthStore()
 const collapsed = ref(false)
 const selected = computed(() => [route.path])
-onMounted(async () => {
-  if (route.meta.public) return
-  try { await auth.load() } catch { /* interceptor redirects */ }
-})
 const nav = [
   { label: '态势台', key: '/', icon: AppstoreOutlined },
   { label: 'AI 控制台', key: '/ai', icon: RobotOutlined, signal: true },

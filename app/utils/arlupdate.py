@@ -17,30 +17,66 @@ def update_task_tag():
             conn_db(table).find_one_and_replace(query, item)
 
 
+QUERY_INDEXES = {
+    "task": [
+        [("status", 1), ("_id", -1)],
+        [("task_tag", 1), ("_id", -1)],
+        [("start_time", -1), ("_id", -1)],
+    ],
+    "domain": [
+        [("task_id", 1), ("_id", -1)], [("task_id", 1), ("domain", 1)], [("domain", 1)],
+    ],
+    "ip": [[("task_id", 1), ("_id", -1)]],
+    "site": [
+        [("task_id", 1), ("_id", -1)], [("task_id", 1), ("site", 1)],
+        [("status", 1)], [("title", 1)], [("hostname", 1)], [("site", 1)],
+        [("http_server", 1)],
+    ],
+    "service": [[("task_id", 1), ("_id", -1)]],
+    "url": [[("task_id", 1), ("_id", -1)]],
+    "vuln": [[("task_id", 1), ("_id", -1)]],
+    "nuclei_result": [[("task_id", 1), ("_id", -1)]],
+    "fileleak": [[("task_id", 1), ("_id", -1)]],
+    "wih": [
+        [("task_id", 1), ("_id", -1)], [("task_id", 1), ("record_type", 1)],
+        [("record_type", 1)], [("fnv_hash", 1)],
+    ],
+    "cert": [[("task_id", 1), ("_id", -1)]],
+    "cip": [[("task_id", 1), ("_id", -1)]],
+    "npoc_service": [[("task_id", 1), ("_id", -1)]],
+    "asset_domain": [
+        [("scope_id", 1), ("_id", -1)], [("scope_id", 1), ("domain", 1)],
+        [("domain", 1)],
+    ],
+    "asset_ip": [[("scope_id", 1), ("_id", -1)]],
+    "asset_site": [[("scope_id", 1), ("_id", -1)], [("scope_id", 1), ("site", 1)]],
+    "asset_wih": [[("scope_id", 1), ("_id", -1)]],
+    "scheduler": [
+        [("status", 1), ("_id", -1)], [("scope_id", 1), ("_id", -1)],
+        [("next_run_time", 1), ("_id", -1)],
+    ],
+    "task_schedule": [
+        [("status", 1), ("_id", -1)], [("next_run_date", 1), ("_id", -1)],
+    ],
+    "github_task": [[("status", 1), ("_id", -1)]],
+    "github_scheduler": [
+        [("status", 1), ("_id", -1)], [("next_run_date", 1), ("_id", -1)],
+    ],
+    "github_result": [[("github_task_id", 1), ("_id", -1)]],
+    "github_monitor_result": [[("github_scheduler_id", 1), ("_id", -1)]],
+}
+
+
+def ensure_query_indexes():
+    """Create indexes used by paginated task, scope, status and time queries."""
+    for collection, indexes in QUERY_INDEXES.items():
+        for index in indexes:
+            conn_db(collection).create_index(index)
+
+
 def create_index():
-    index_map = {
-        "cert": "task_id",
-        "domain": ["task_id", "domain"],
-        "fileleak": "task_id",
-        "ip": "task_id",
-        "npoc_service": "task_id",
-        "site": ["task_id", "status", "title", "hostname", "site", "http_server"],
-        "service": "task_id",
-        "url": "task_id",
-        "vuln": "task_id",
-        "asset_ip": "scope_id",
-        "asset_site": "scope_id",
-        "asset_domain": ["scope_id", "domain"],
-        "github_result": "github_task_id",
-        "github_monitor_result": "github_scheduler_id",
-        "wih": ["task_id", "record_type", "fnv_hash"],
-    }
-    for table in index_map:
-        if isinstance(index_map[table], list):
-            for index in index_map[table]:
-                conn_db(table).create_index(index)
-        else:
-            conn_db(table).create_index(index_map[table])
+    """Backward-compatible entry point for existing maintenance scripts."""
+    ensure_query_indexes()
 
 
 def arl_update():
@@ -53,6 +89,7 @@ def arl_update():
     from app.services.ai.store import ensure_ai_indexes
     ensure_auth_indexes()
     ensure_ai_indexes()
+    ensure_query_indexes()
 
     npoc_info_update()
 
@@ -61,8 +98,6 @@ def arl_update():
         return
 
     update_task_tag()
-    create_index()
-
     open(update_lock, 'a').close()
 
 

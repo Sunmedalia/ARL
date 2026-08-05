@@ -1,4 +1,9 @@
 <script setup lang="ts">
+import { Button as _AButtonImpl, Form as _AFormImpl, FormItem as _AFormItemImpl, InputPassword as _AInputPasswordImpl } from 'ant-design-vue'
+const AButton: any = _AButtonImpl
+const AForm: any = _AFormImpl
+const AFormItem: any = _AFormItemImpl
+const AInputPassword: any = _AInputPasswordImpl
 import { reactive, ref } from 'vue'
 import { message } from 'ant-design-vue'
 import PageHeader from '../components/PageHeader.vue'

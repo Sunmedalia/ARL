@@ -1,26 +1,62 @@
 name: arl
 
-x-app: &app
-  image: arl-app:${ARL_IMAGE_TAG:-local}
+x-environment: &app-environment
+  TZ: ${TZ:-Asia/Shanghai}
+  ARL_MONGO_URL: mongodb://${MONGO_USERNAME:-arl}:${MONGO_PASSWORD:-arl-mongo-change-me}@mongo:27017/?authSource=admin
+  ARL_MONGO_DB: ${MONGO_DATABASE:-arl}
+  ARL_CELERY_BROKER_URL: amqp://${RABBITMQ_USERNAME:-arl}:${RABBITMQ_PASSWORD:-arl-rabbit-change-me}@rabbitmq:5672/${RABBITMQ_VHOST:-arlv2host}
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: ${ARL_LOG_MAX_SIZE:-10m}
+    max-file: ${ARL_LOG_MAX_FILES:-3}
+
+x-api: &api
+  image: arl-api:${ARL_IMAGE_TAG:-local}
+  pull_policy: never
+  restart: unless-stopped
+  init: true
+  user: "10001:10001"
+  environment: *app-environment
+  volumes: &api-volumes
+    - arl_tmp:/code/app/tmp
+    - arl_screenshots:/code/app/tmp_screenshot
+  networks:
+    - arl_internal
+  logging: *default-logging
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+  read_only: true
+  tmpfs:
+    - /tmp:size=64m,mode=1777
+
+x-worker: &worker
+  image: arl-worker:${ARL_IMAGE_TAG:-local}
   pull_policy: never
   platform: linux/amd64
   restart: unless-stopped
   init: true
-  environment: &app-environment
-    TZ: ${TZ:-Asia/Shanghai}
-    ARL_MONGO_URL: mongodb://${MONGO_USERNAME:-arl}:${MONGO_PASSWORD:-arl-mongo-change-me}@mongo:27017/?authSource=admin
-    ARL_MONGO_DB: ${MONGO_DATABASE:-arl}
-    ARL_CELERY_BROKER_URL: amqp://${RABBITMQ_USERNAME:-arl}:${RABBITMQ_PASSWORD:-arl-rabbit-change-me}@rabbitmq:5672/${RABBITMQ_VHOST:-arlv2host}
-  volumes: &app-volumes
+  user: "0:10001"
+  environment: *app-environment
+  volumes:
     - arl_tmp:/code/app/tmp
     - arl_screenshots:/code/app/tmp_screenshot
     - nuclei_cache:/root/nuclei-templates
   networks:
     - arl_internal
+  logging: *default-logging
+  cap_drop: [ALL]
+  cap_add:
+    - NET_ADMIN
+    - NET_RAW
+  security_opt:
+    - no-new-privileges:true
 
 services:
   mongo:
-    image: mongo:7.0
+    image: mongo:7.0.24
     restart: unless-stopped
     environment:
       TZ: ${TZ:-Asia/Shanghai}
@@ -39,9 +75,16 @@ services:
       start_period: 20s
     networks:
       - arl_internal
+    logging: *default-logging
+    ulimits:
+      nofile:
+        soft: 64000
+        hard: 64000
+    cpus: ${ARL_MONGO_CPUS:-1.5}
+    mem_limit: ${ARL_MONGO_MEMORY:-2g}
 
   rabbitmq:
-    image: rabbitmq:3.13-management-alpine
+    image: rabbitmq:3.13.7-management-alpine
     restart: unless-stopped
     environment:
       TZ: ${TZ:-Asia/Shanghai}
@@ -51,21 +94,46 @@ services:
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      test: [CMD, rabbitmq-diagnostics, -q, ping]
       interval: 10s
       timeout: 5s
       retries: 20
       start_period: 20s
     networks:
       - arl_internal
+    logging: *default-logging
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    cpus: ${ARL_RABBITMQ_CPUS:-1.0}
+    mem_limit: ${ARL_RABBITMQ_MEMORY:-1g}
 
   init:
-    <<: *app
+    <<: *api
     build:
       context: .
-      dockerfile: docker/worker/Dockerfile
+      dockerfile: docker/api/Dockerfile
     restart: "no"
-    command: ["python", "-m", "app.docker_init"]
+    user: "0:0"
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
+    volumes:
+      - arl_tmp:/code/app/tmp
+      - arl_screenshots:/code/app/tmp_screenshot
+      - gateway_certs:/etc/nginx/arl-certs
+    command:
+      - sh
+      - -ec
+      - |
+        chown -R 10001:10001 /code/app/tmp /code/app/tmp_screenshot /etc/nginx/arl-certs
+        chmod 0770 /code/app/tmp /code/app/tmp_screenshot
+        chmod 0700 /etc/nginx/arl-certs
+        exec setpriv --reuid=10001 --regid=10001 --clear-groups python -m app.docker_init
     environment:
       <<: *app-environment
       ARL_ADMIN_USERNAME: ${ARL_ADMIN_USERNAME:-admin}
@@ -75,9 +143,11 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+    cpus: ${ARL_INIT_CPUS:-1.0}
+    mem_limit: ${ARL_INIT_MEMORY:-1g}
 
   api:
-    <<: *app
+    <<: *api
     command:
       - sh
       - -c
@@ -90,14 +160,16 @@ services:
       rabbitmq:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:5013/healthz"]
+      test: [CMD, curl, -fsS, http://127.0.0.1:5013/healthz]
       interval: 10s
       timeout: 5s
       retries: 20
       start_period: 30s
+    cpus: ${ARL_API_CPUS:-2.0}
+    mem_limit: ${ARL_API_MEMORY:-2g}
 
   ai:
-    <<: *app
+    <<: *api
     command:
       - gunicorn
       - -b
@@ -110,7 +182,7 @@ services:
       - --worker-class
       - gthread
       - --timeout
-      - "130"
+      - "160"
       - --access-logfile
       - "-"
       - --error-logfile
@@ -121,20 +193,27 @@ services:
       ARL_AI_BASE_URL: ${ARL_AI_BASE_URL:-https://api.openai.com/v1}
       ARL_AI_MODEL: ${ARL_AI_MODEL:-}
       ARL_AI_API_KEY: ${ARL_AI_API_KEY:-}
+      ARL_AI_TIMEOUT: ${ARL_AI_TIMEOUT:-120}
+      ARL_AI_MAX_CONTEXT_BYTES: ${ARL_AI_MAX_CONTEXT_BYTES:-102400}
     depends_on:
       init:
         condition: service_completed_successfully
       mongo:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:5014/healthz"]
+      test: [CMD, curl, -fsS, http://127.0.0.1:5014/healthz]
       interval: 10s
       timeout: 5s
       retries: 20
       start_period: 15s
+    cpus: ${ARL_AI_CPUS:-2.0}
+    mem_limit: ${ARL_AI_MEMORY:-2g}
 
   worker:
-    <<: *app
+    <<: *worker
+    build:
+      context: .
+      dockerfile: docker/worker/Dockerfile
     command:
       - celery
       - -A
@@ -150,9 +229,6 @@ services:
       - ${ARL_WORKER_CONCURRENCY:-5}
       - -O
       - fair
-    cap_add:
-      - NET_ADMIN
-      - NET_RAW
     ulimits:
       nofile:
         soft: 65535
@@ -164,9 +240,11 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+    cpus: ${ARL_WORKER_CPUS:-4.0}
+    mem_limit: ${ARL_WORKER_MEMORY:-6g}
 
   github-worker:
-    <<: *app
+    <<: *api
     command:
       - celery
       - -A
@@ -189,10 +267,12 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+    cpus: ${ARL_GITHUB_WORKER_CPUS:-1.5}
+    mem_limit: ${ARL_GITHUB_WORKER_MEMORY:-1g}
 
   scheduler:
-    <<: *app
-    command: ["python", "-m", "app.scheduler"]
+    <<: *api
+    command: [python, -m, app.scheduler]
     depends_on:
       init:
         condition: service_completed_successfully
@@ -200,25 +280,78 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+    cpus: ${ARL_SCHEDULER_CPUS:-0.5}
+    mem_limit: ${ARL_SCHEDULER_MEMORY:-512m}
 
   gateway:
-    <<: *app
-    command: ["/usr/local/bin/docker-gateway.sh"]
+    image: arl-gateway:${ARL_IMAGE_TAG:-local}
+    pull_policy: never
+    build:
+      context: .
+      dockerfile: docker/gateway/Dockerfile
+    restart: unless-stopped
+    init: true
+    user: "10001:10001"
     ports:
       - ${ARL_PORT:-5003}:5003
     volumes:
       - gateway_certs:/etc/nginx/arl-certs
+      - ./docker/certs:/etc/nginx/trusted-certs:ro
+    networks:
+      - arl_internal
+    logging: *default-logging
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
     depends_on:
       api:
         condition: service_healthy
       ai:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-fkSs", "https://127.0.0.1:5003/healthz"]
+      test: [CMD, curl, -fkSs, https://127.0.0.1:5003/healthz]
       interval: 10s
       timeout: 5s
       retries: 10
       start_period: 10s
+    cpus: ${ARL_GATEWAY_CPUS:-0.5}
+    mem_limit: ${ARL_GATEWAY_MEMORY:-256m}
+
+  mongo-backup:
+    image: mongo:7.0.24
+    profiles: [backup]
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      MONGO_BACKUP_URI: mongodb://${MONGO_USERNAME:-arl}:${MONGO_PASSWORD:-arl-mongo-change-me}@mongo:27017/${MONGO_DATABASE:-arl}?authSource=admin
+      MONGO_BACKUP_INTERVAL_SECONDS: ${MONGO_BACKUP_INTERVAL_SECONDS:-86400}
+      MONGO_BACKUP_RETENTION_DAYS: ${MONGO_BACKUP_RETENTION_DAYS:-14}
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        while true; do
+          stamp=$$(date -u +%Y%m%dT%H%M%SZ)
+          mongodump --uri="$$MONGO_BACKUP_URI" --archive="/backup/arl-$$stamp.archive.gz" --gzip
+          find /backup -type f -name 'arl-*.archive.gz' -mtime +"$$MONGO_BACKUP_RETENTION_DAYS" -delete
+          sleep "$$MONGO_BACKUP_INTERVAL_SECONDS"
+        done
+    volumes:
+      - mongo_backups:/backup
+    depends_on:
+      mongo:
+        condition: service_healthy
+    networks:
+      - arl_internal
+    logging: *default-logging
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    cpus: ${ARL_BACKUP_CPUS:-1.0}
+    mem_limit: ${ARL_BACKUP_MEMORY:-1g}
 
 networks:
   arl_internal:
@@ -231,3 +364,4 @@ volumes:
   arl_screenshots:
   nuclei_cache:
   gateway_certs:
+  mongo_backups:

@@ -28,7 +28,7 @@ from .query_loader import load_query_plugins
 import re
 
 def load_file(path):
-    with open(path, "r+", encoding="utf-8") as f:
+    with open(path, "r", encoding="utf-8") as f:
         return f.readlines()
 
 

@@ -1,4 +1,9 @@
 <script setup lang="ts">
+import { Alert as _AAlertImpl, Button as _AButtonImpl, Textarea as _ATextareaImpl, Tooltip as _ATooltipImpl } from 'ant-design-vue'
+const AAlert: any = _AAlertImpl
+const AButton: any = _AButtonImpl
+const ATextarea: any = _ATextareaImpl
+const ATooltip: any = _ATooltipImpl
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
@@ -14,8 +19,9 @@ interface Timeline { name: string; status: string; duration_ms?: number; result?
 const router = useRouter(); const auth = useAuthStore(); const conversations = ref<Conversation[]>([]); const conversationId = ref('')
 const messages = ref<ChatMessage[]>([]); const timeline = ref<Timeline[]>([]); const input = ref(''); const streaming = ref(false); const granted = ref(false)
 const available = ref(false); const unavailableReason = ref(''); const scrollEl = ref<HTMLElement>(); let controller: AbortController | undefined
+const conversationPage=ref(1);const conversationTotal=ref(0)
 const rendered = (text: string) => DOMPurify.sanitize(marked.parse(text, { async: false }) as string)
-async function loadList() { const data = await apiRequest<{items:Conversation[]}>('/api/ai/conversations'); conversations.value = data.items || [] }
+async function loadList(reset=true) { if(reset)conversationPage.value=1;const data = await apiRequest<{items:Conversation[];total:number}>(`/api/ai/conversations?page=${conversationPage.value}&size=20`); conversations.value = reset?(data.items||[]):[...conversations.value,...(data.items||[])];conversationTotal.value=data.total||0;conversationPage.value+=1 }
 async function loadConversation(id: string) { const data = await apiRequest<any>(`/api/ai/conversations/${id}`); conversationId.value = id; messages.value = data.messages || []; timeline.value = (data.actions || []).filter((x:any)=>!x.tool_name.startsWith('authorization_')).map((x:any)=>({name:x.tool_name,status:x.status,duration_ms:x.duration_ms,result:x.result})); granted.value = data.granted; await auth.load(id) }
 function newChat() { controller?.abort(); conversationId.value=''; messages.value=[]; timeline.value=[]; granted.value=false }
 async function removeConversation(id: string) { await apiRequest(`/api/ai/conversations/${id}`, {method:'DELETE'}); if(conversationId.value===id)newChat(); await loadList() }
@@ -38,7 +44,7 @@ onMounted(async()=>{try{const status=await apiRequest<any>('/api/ai/status');ava
 </script>
 <template>
   <section class="ai-workspace">
-    <aside class="conversation-rail"><div class="rail-head"><div><span class="eyebrow">AI / THREADS</span><h2>对话</h2></div><a-button shape="circle" @click="newChat"><PlusOutlined/></a-button></div><button v-for="item in conversations" :key="item._id" :class="{active:item._id===conversationId}" @click="loadConversation(item._id)"><span>{{item.title}}</span><small>{{item.updated_at?.slice(0,16).replace('T',' ')}}</small><DeleteOutlined @click.stop="removeConversation(item._id)"/></button><div v-if="!conversations.length" class="rail-empty">新对话会保留 90 天</div></aside>
+    <aside class="conversation-rail"><div class="rail-head"><div><span class="eyebrow">AI / THREADS</span><h2>对话</h2></div><a-button shape="circle" @click="newChat"><PlusOutlined/></a-button></div><button v-for="item in conversations" :key="item._id" :class="{active:item._id===conversationId}" @click="loadConversation(item._id)"><span>{{item.title}}</span><small>{{item.updated_at?.slice(0,16).replace('T',' ')}}</small><DeleteOutlined @click.stop="removeConversation(item._id)"/></button><button v-if="conversations.length<conversationTotal" class="load-more" @click="loadList(false)"><span>加载更多对话</span></button><div v-if="!conversations.length" class="rail-empty">新对话会保留 90 天</div></aside>
     <main class="chat-stage"><header class="chat-head"><div><span class="eyebrow">ARL NATIVE AI</span><h1>侦察副驾驶</h1></div><a-tooltip :title="conversationId?'授权只绑定当前登录会话与本对话':'发送消息后可授权'"><a-button :danger="granted" :disabled="!conversationId" @click="toggleGrant"><SafetyCertificateOutlined/>{{granted?'撤销执行授权':'开启执行授权'}}</a-button></a-tooltip></header>
       <a-alert v-if="!available" type="warning" show-icon :message="unavailableReason||'AI 服务不可用'" description="普通 ARL 查询与任务功能不受影响。"/>
       <div ref="scrollEl" class="message-stream">

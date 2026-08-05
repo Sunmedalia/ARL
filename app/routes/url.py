@@ -1,5 +1,8 @@
 from flask_restx import Resource, Api, reqparse, fields, Namespace
+from bson import ObjectId
 from app.utils import get_logger, auth
+from app import utils
+from app.modules import ErrorMsg
 from . import base_query_fields, ARLResource, get_arl_parser
 
 ns = Namespace('url', description="URL信息")
@@ -50,3 +53,20 @@ class ARLUrlExport(ARLResource):
         response = self.send_export_file(args=args, _type="url")
 
         return response
+
+
+delete_url_fields = ns.model('deleteUrlFields', {
+    '_id': fields.List(fields.String(required=True, description='URL _id'))
+})
+
+
+@ns.route('/delete/')
+class DeleteARLUrl(ARLResource):
+    @auth
+    @ns.expect(delete_url_fields)
+    def post(self):
+        args = self.parse_args(delete_url_fields)
+        id_list = args.pop('_id', [])
+        for item_id in id_list:
+            utils.conn_db('url').delete_one({'_id': ObjectId(item_id)})
+        return utils.build_ret(ErrorMsg.Success, {'_id': id_list})

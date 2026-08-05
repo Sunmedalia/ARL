@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 from datetime import timedelta
 
@@ -13,6 +14,7 @@ from app.utils.conn import conn_db
 
 
 ai_blueprint = Blueprint("ai", __name__, url_prefix="/api/ai")
+logger = logging.getLogger(__name__)
 
 
 def response(data=None, code=200, message="success"):
@@ -63,12 +65,20 @@ def conversations():
     session, error = session_required()
     if error:
         return error
-    limit = min(max(request.args.get("limit", 30, type=int), 1), 50)
-    cursor = conn_db("ai_conversation").find({
-        "username": session["username"]
-    }).sort("updated_at", -1).limit(limit)
+    size = request.args.get("size", request.args.get("limit", 20, type=int), type=int)
+    page = request.args.get("page", 1, type=int)
+    if page is None or page <= 0:
+        return response(code=400, message="page must be greater than zero")
+    if size is None or not 1 <= size <= 100:
+        return response(code=400, message="size must be between 1 and 100")
+    query = {"username": session["username"]}
+    collection = conn_db("ai_conversation")
+    cursor = collection.find(query).sort("updated_at", -1).skip((page - 1) * size).limit(size)
     items = [store.serialize(item) for item in cursor]
-    return response({"items": items})
+    return response({
+        "items": items, "page": page, "size": size,
+        "total": collection.count_documents(query),
+    })
 
 
 @ai_blueprint.get("/conversations/<conversation_id>")
@@ -134,6 +144,9 @@ def revoke_grant():
         return error
     body = request.get_json(silent=True) or {}
     conversation_id = body.get("conversation_id", "")
+    _, error = _conversation_or_error(conversation_id, session)
+    if error:
+        return error
     query = {"conversation_id": conversation_id, "username": session["username"],
              "session_id": str(session["_id"]), "revoked_at": None}
     conn_db("ai_grant").update_many(query, {"$set": {"revoked_at": session_service.utcnow()}})
@@ -213,7 +226,10 @@ def chat_stream():
         except GeneratorExit:
             raise
         except Exception:
-            yield _sse({"event": "error", "data": {"message": "AI stream failed"}})
+            logger.exception("AI stream failed")
+            yield _sse({"event": "error", "data": {
+                "error_code": "AI_STREAM_FAILED", "message": "AI stream failed"
+            }})
         finally:
             conn_db("ai_stream").delete_one({"_id": stream_key})
 

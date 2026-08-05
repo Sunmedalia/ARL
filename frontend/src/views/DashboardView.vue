@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { Button as _AButtonImpl } from 'ant-design-vue'
+const AButton: any = _AButtonImpl
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { apiRequest } from '../api/client'

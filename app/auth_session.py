@@ -8,6 +8,7 @@ has to accept the global ARL API key.
 import hashlib
 import hmac
 import secrets
+import unicodedata
 from datetime import datetime, timedelta
 
 from flask import request
@@ -20,6 +21,8 @@ SESSION_COOKIE = "arl_session"
 SESSION_LIFETIME = timedelta(hours=8)
 ATTEMPT_WINDOW = timedelta(minutes=15)
 ATTEMPT_LIMIT = 5
+IP_ATTEMPT_LIMIT = 20
+SESSION_TOUCH_INTERVAL = timedelta(minutes=5)
 WRITE_GET_SEGMENTS = (
     "/add", "/delete", "/disable", "/enable", "/logout", "/restart",
     "/run", "/save_", "/stop", "/sync", "/update",
@@ -38,7 +41,15 @@ def ensure_auth_indexes():
     conn_db("auth_session").create_index("expires_at", expireAfterSeconds=0)
     conn_db("auth_session").create_index("token_hash", unique=True)
     conn_db("auth_attempt").create_index("expires_at", expireAfterSeconds=0)
-    conn_db("auth_attempt").create_index([("username", 1), ("ip", 1)])
+    conn_db("auth_attempt").create_index([("username", 1), ("ip", 1), ("created_at", -1)])
+    conn_db("auth_attempt").create_index([("ip", 1), ("created_at", -1)])
+    conn_db("user").create_index("username_normalized")
+
+
+def normalize_username(username):
+    if not isinstance(username, str):
+        return ""
+    return unicodedata.normalize("NFKC", username).strip().casefold()
 
 
 def client_ip():
@@ -49,19 +60,26 @@ def client_ip():
 
 
 def login_is_limited(username, ip=None):
+    username = normalize_username(username)
     ip = ip or client_ip()
     cutoff = utcnow() - ATTEMPT_WINDOW
-    return conn_db("auth_attempt").count_documents({
+    attempts = conn_db("auth_attempt")
+    pair_limited = attempts.count_documents({
         "username": username,
         "ip": ip,
         "created_at": {"$gte": cutoff},
     }) >= ATTEMPT_LIMIT
+    ip_limited = attempts.count_documents({
+        "ip": ip,
+        "created_at": {"$gte": cutoff},
+    }) >= IP_ATTEMPT_LIMIT
+    return pair_limited or ip_limited
 
 
 def record_failed_login(username, ip=None):
     now = utcnow()
     conn_db("auth_attempt").insert_one({
-        "username": username,
+        "username": normalize_username(username),
         "ip": ip or client_ip(),
         "created_at": now,
         "expires_at": now + ATTEMPT_WINDOW,
@@ -69,7 +87,9 @@ def record_failed_login(username, ip=None):
 
 
 def clear_failed_logins(username, ip=None):
-    conn_db("auth_attempt").delete_many({"username": username, "ip": ip or client_ip()})
+    conn_db("auth_attempt").delete_many({
+        "username": normalize_username(username), "ip": ip or client_ip()
+    })
 
 
 def verify_password(user, password):
@@ -147,7 +167,14 @@ def get_session(touch=True):
     })
     if item and touch:
         conn_db("auth_session").update_one(
-            {"_id": item["_id"]}, {"$set": {"last_seen_at": now}}
+            {
+                "_id": item["_id"],
+                "$or": [
+                    {"last_seen_at": {"$lte": now - SESSION_TOUCH_INTERVAL}},
+                    {"last_seen_at": {"$exists": False}},
+                ],
+            },
+            {"$set": {"last_seen_at": now}},
         )
     return item
 
