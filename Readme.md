@@ -16,6 +16,7 @@ ARL（Asset Reconnaissance Lighthouse）是面向安全团队的资产侦察与�
 - [核心能力](#核心能力)
 - [系统架构](#系统架构)
 - [运行要求](#运行要求)
+- [Docker Compose 一键启动](#docker-compose-一键启动)
 - [快速开始](#快速开始)
 - [生产部署](#生产部署)
 - [新版控制台](#新版控制台)
@@ -97,9 +98,111 @@ AI 服务与普通 API 分离；模型服务不可用时，不影响资产查询
 
 实际资源消耗取决于目标数量、端口范围、并发设置和启用的扫描模块。请根据授权范围控制扫描速率。
 
+## Docker Compose 一键启动
+
+这是推荐的全新部署方式。Compose 会启动 MongoDB、RabbitMQ、普通 API、AI 服务、两个 Celery Worker、调度器和 HTTPS 网关。
+
+建议使用 Docker Engine 24+ 与 Docker Compose 2.20+。
+
+### 1. 准备环境变量
+
+```bash
+cp .env.example .env
+```
+
+生产使用前至少修改 `.env` 中的：
+
+- `MONGO_PASSWORD`；
+- `RABBITMQ_PASSWORD`；
+- `ARL_ADMIN_PASSWORD`。
+
+MongoDB 和 RabbitMQ 密码应使用 URL 安全字符。`.env` 已被 Git 忽略，不要提交真实密码。
+
+默认使用镜像内的 `app/config.yaml.example`。如需自定义扫描策略或现有集成配置，创建本地只读配置挂载：
+
+```bash
+cp app/config.yaml.example app/config.yaml
+cp compose.override.yaml.example compose.override.yaml
+```
+
+然后编辑 `app/config.yaml`。这两个本地文件均不会被提交；MongoDB、RabbitMQ 和 AI 密钥仍由 `.env` 注入。
+
+### 2. 构建并启动
+
+```bash
+docker compose up -d --build
+```
+
+如果安装的是独立发行的 Compose 2，也可以使用：
+
+```bash
+docker-compose up -d --build
+```
+
+首次启动需要构建应用镜像、初始化数据库和下载基础镜像，耗时取决于网络。`init` 容器执行完成并显示退出码 `0` 属于正常状态。
+
+### 3. 检查状态
+
+```bash
+docker compose ps -a
+docker compose logs -f init api worker gateway
+```
+
+浏览器访问：
+
+- 旧版控制台：`https://服务器IP:5003/`；
+- 新版控制台：`https://服务器IP:5003/next/`。
+
+网关首次启动会生成自签名 TLS 证书，浏览器会提示证书不受信任。生产环境应替换为受信任证书。
+
+初始管理员来自 `.env`：
+
+- 用户名：`ARL_ADMIN_USERNAME`，默认 `admin`；
+- 密码：`ARL_ADMIN_PASSWORD`，默认 `arlpass`。
+
+管理员只在该用户名不存在时创建。数据卷已经初始化后，修改 `.env` 中的管理员密码不会覆盖现有密码，请在控制台中修改。
+
+### 4. 常用命令
+
+```bash
+docker compose up -d                 # 启动
+docker compose restart api worker   # 重启部分服务
+docker compose logs -f               # 查看日志
+docker compose down                  # 停止，保留数据
+docker compose pull mongo rabbitmq   # 更新基础服务镜像
+docker compose up -d --build         # 重新构建并滚动启动
+```
+
+彻底删除数据库、队列、证书和运行数据：
+
+```bash
+docker compose down -v
+```
+
+> `down -v` 不可恢复，请先备份 MongoDB 数据。
+
+### 5. 启用 AI
+
+在 `.env` 中设置：
+
+```dotenv
+ARL_AI_ENABLED=true
+ARL_AI_BASE_URL=https://api.openai.com/v1
+ARL_AI_MODEL=your-model-name
+ARL_AI_API_KEY=your-api-key
+```
+
+然后重建 AI 服务：
+
+```bash
+docker compose up -d --force-recreate ai gateway
+```
+
+Compose 默认使用 `linux/amd64` 应用镜像，因为仓库内的 PhantomJS、MassDNS、Ncrack 和 Nuclei 是 x86_64 二进制。在 ARM64 主机上需要 Docker 的 amd64 模拟支持。
+
 ## 快速开始
 
-以下流程适用于本地开发。MongoDB、RabbitMQ 和依赖的扫描工具需要预先准备。
+以下流程适用于不使用容器的本地开发。MongoDB、RabbitMQ 和依赖的扫描工具需要预先准备。
 
 ### 1. 创建 Python 环境
 
@@ -188,7 +291,7 @@ sudo bash misc/setup-arl.sh
 - `docker/nginx.conf`：容器内 Nginx 配置；
 - `docker/config-docker.yaml`：容器配置示例。
 
-构建上下文需要包含 `tools/` 下的扫描器、GeoIP 数据和 NPoC 依赖。生产环境应通过挂载或密钥管理系统注入配置，避免将密码和 Token 写入镜像。
+根目录 `compose.yaml` 是标准启动入口，`docker/docker-compose.yml` 是兼容入口。构建上下文需要包含 `tools/` 下的扫描器、GeoIP 数据和 NPoC 依赖。生产环境应通过 `.env`、只读配置挂载或密钥管理系统注入配置，避免将密码和 Token 写入镜像。
 
 ### 初始管理员
 
@@ -377,6 +480,9 @@ python -m app.ai_main    # AI 开发服务，端口 5014
 
 ```text
 ARL/
+├── compose.yaml         # Docker Compose 一键启动入口
+├── compose.override.yaml.example # 自定义 YAML 配置挂载模板
+├── .env.example         # Compose 环境变量模板
 ├── app/
 │   ├── routes/          # REST API 与 AI 路由
 │   ├── services/        # 业务服务和 AI 服务

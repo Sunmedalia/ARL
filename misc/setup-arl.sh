@@ -125,7 +125,6 @@ then
   wget -c https://github.com/adysec/ARL/raw/master/tools/nuclei.zip -O nuclei.zip
   unzip nuclei.zip && mv nuclei /usr/bin/ && rm -f nuclei.zip
   nuclei -ut
-  rm -rf /opt/*
 fi
 
 

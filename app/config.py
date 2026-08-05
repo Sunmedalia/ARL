@@ -240,3 +240,22 @@ try:
 except Exception as e:
     print("Parse config.yaml error {}".format(e))
     sys.exit(-1)
+
+
+def _env_bool(name, default):
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+# Container deployments inject connection strings and AI settings at runtime.
+# YAML remains the source for scanner policies and integration configuration.
+Config.MONGO_URL = os.environ.get("ARL_MONGO_URL", Config.MONGO_URL)
+Config.MONGO_DB = os.environ.get("ARL_MONGO_DB", Config.MONGO_DB)
+Config.CELERY_BROKER_URL = os.environ.get(
+    "ARL_CELERY_BROKER_URL", Config.CELERY_BROKER_URL
+)
+Config.AI_ENABLED = _env_bool("ARL_AI_ENABLED", Config.AI_ENABLED)
+Config.AI_BASE_URL = os.environ.get("ARL_AI_BASE_URL", Config.AI_BASE_URL)
+Config.AI_MODEL = os.environ.get("ARL_AI_MODEL", Config.AI_MODEL)

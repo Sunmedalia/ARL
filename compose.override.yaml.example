@@ -1,0 +1,19 @@
+# Copy to compose.override.yaml only when a custom ARL YAML configuration is
+# needed. Compose merges these read-only mounts with the runtime data volumes.
+x-custom-config: &custom-config
+  volumes:
+    - ./app/config.yaml:/code/app/config.yaml:ro
+
+services:
+  init:
+    <<: *custom-config
+  api:
+    <<: *custom-config
+  ai:
+    <<: *custom-config
+  worker:
+    <<: *custom-config
+  github-worker:
+    <<: *custom-config
+  scheduler:
+    <<: *custom-config

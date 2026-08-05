@@ -1,4 +1,6 @@
 .venv/
+.env
+compose.override.yaml
 __pycache__/
 *.py[cod]
 app/config.yaml

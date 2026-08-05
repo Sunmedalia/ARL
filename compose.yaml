@@ -1,0 +1,233 @@
+name: arl
+
+x-app: &app
+  image: arl-app:${ARL_IMAGE_TAG:-local}
+  pull_policy: never
+  platform: linux/amd64
+  restart: unless-stopped
+  init: true
+  environment: &app-environment
+    TZ: ${TZ:-Asia/Shanghai}
+    ARL_MONGO_URL: mongodb://${MONGO_USERNAME:-arl}:${MONGO_PASSWORD:-arl-mongo-change-me}@mongo:27017/?authSource=admin
+    ARL_MONGO_DB: ${MONGO_DATABASE:-arl}
+    ARL_CELERY_BROKER_URL: amqp://${RABBITMQ_USERNAME:-arl}:${RABBITMQ_PASSWORD:-arl-rabbit-change-me}@rabbitmq:5672/${RABBITMQ_VHOST:-arlv2host}
+  volumes: &app-volumes
+    - arl_tmp:/code/app/tmp
+    - arl_screenshots:/code/app/tmp_screenshot
+    - nuclei_cache:/root/nuclei-templates
+  networks:
+    - arl_internal
+
+services:
+  mongo:
+    image: mongo:7.0
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USERNAME:-arl}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-arl-mongo-change-me}
+      MONGO_INITDB_DATABASE: ${MONGO_DATABASE:-arl}
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - mongosh --quiet --username "$${MONGO_INITDB_ROOT_USERNAME}" --password "$${MONGO_INITDB_ROOT_PASSWORD}" --authenticationDatabase admin --eval "db.adminCommand('ping').ok" | grep 1
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    networks:
+      - arl_internal
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:-arl}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-arl-rabbit-change-me}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-arlv2host}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    networks:
+      - arl_internal
+
+  init:
+    <<: *app
+    build:
+      context: .
+      dockerfile: docker/worker/Dockerfile
+    restart: "no"
+    command: ["python", "-m", "app.docker_init"]
+    environment:
+      <<: *app-environment
+      ARL_ADMIN_USERNAME: ${ARL_ADMIN_USERNAME:-admin}
+      ARL_ADMIN_PASSWORD: ${ARL_ADMIN_PASSWORD:-arlpass}
+    depends_on:
+      mongo:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  api:
+    <<: *app
+    command:
+      - sh
+      - -c
+      - exec gunicorn -b 0.0.0.0:5013 app.main:arl_app -w ${ARL_API_WORKERS:-4} --timeout 120 --access-logfile - --error-logfile -
+    depends_on:
+      init:
+        condition: service_completed_successfully
+      mongo:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:5013/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  ai:
+    <<: *app
+    command:
+      - gunicorn
+      - -b
+      - 0.0.0.0:5014
+      - app.ai_main:ai_app
+      - -w
+      - "2"
+      - --threads
+      - "4"
+      - --worker-class
+      - gthread
+      - --timeout
+      - "130"
+      - --access-logfile
+      - "-"
+      - --error-logfile
+      - "-"
+    environment:
+      <<: *app-environment
+      ARL_AI_ENABLED: ${ARL_AI_ENABLED:-false}
+      ARL_AI_BASE_URL: ${ARL_AI_BASE_URL:-https://api.openai.com/v1}
+      ARL_AI_MODEL: ${ARL_AI_MODEL:-}
+      ARL_AI_API_KEY: ${ARL_AI_API_KEY:-}
+    depends_on:
+      init:
+        condition: service_completed_successfully
+      mongo:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:5014/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+
+  worker:
+    <<: *app
+    command:
+      - celery
+      - -A
+      - app.celerytask.celery
+      - worker
+      - -l
+      - info
+      - -Q
+      - arltask
+      - -n
+      - arltask@%h
+      - -c
+      - ${ARL_WORKER_CONCURRENCY:-5}
+      - -O
+      - fair
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+    depends_on:
+      init:
+        condition: service_completed_successfully
+      mongo:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  github-worker:
+    <<: *app
+    command:
+      - celery
+      - -A
+      - app.celerytask.celery
+      - worker
+      - -l
+      - info
+      - -Q
+      - arlgithub
+      - -n
+      - arlgithub@%h
+      - -c
+      - ${ARL_GITHUB_WORKER_CONCURRENCY:-3}
+      - -O
+      - fair
+    depends_on:
+      init:
+        condition: service_completed_successfully
+      mongo:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  scheduler:
+    <<: *app
+    command: ["python", "-m", "app.scheduler"]
+    depends_on:
+      init:
+        condition: service_completed_successfully
+      mongo:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  gateway:
+    <<: *app
+    command: ["/usr/local/bin/docker-gateway.sh"]
+    ports:
+      - ${ARL_PORT:-5003}:5003
+    volumes:
+      - gateway_certs:/etc/nginx/arl-certs
+    depends_on:
+      api:
+        condition: service_healthy
+      ai:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fkSs", "https://127.0.0.1:5003/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+networks:
+  arl_internal:
+    driver: bridge
+
+volumes:
+  mongo_data:
+  rabbitmq_data:
+  arl_tmp:
+  arl_screenshots:
+  nuclei_cache:
+  gateway_certs:

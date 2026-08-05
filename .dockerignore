@@ -1,0 +1,16 @@
+.git
+.github
+.venv
+compose.override.yaml
+**/__pycache__
+**/*.py[cod]
+app/config.yaml
+app/tmp
+app/tmp_screenshot
+frontend/node_modules
+frontend/dist
+frontend/.vite
+frontend-dist
+*.log
+test-results
+playwright-report
