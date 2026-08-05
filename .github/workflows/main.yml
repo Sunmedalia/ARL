@@ -1,0 +1,35 @@
+name: Daily Update ARL Tools
+
+on:
+  schedule:
+    - cron: '0 12 * * *'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.x'
+        
+    - name: Update Nuclei
+      run: cd tools && pip install requests && python nuclei_download.py
+      
+    - name: Update GeoLite2-ASN
+      run: cd tools && wget https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-ASN.mmdb -O GeoLite2-ASN.mmdb
+    - name: Update GeoLite2-City
+      run: cd tools && wget https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-City.mmdb -O GeoLite2-City.mmdb
+      
+    - name: Commit and Push changes
+      run: |
+        echo $(date +'%Y%m%d') > date.txt
+        git add .
+        git config --local user.email "admin@adysec.com"
+        git config --local user.name "adysec"
+        git commit -am "$(date +'%Y%m%d')"
+        git push -v --progress
