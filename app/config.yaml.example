@@ -134,4 +134,14 @@ ARL:
   #组合生成的域名爆破并发数
   ALT_DNS_CONCURRENT: 1500
 
+# AI 密钥只能通过 ARL_AI_API_KEY 环境变量设置，不要写入本文件。
+AI:
+  ENABLED: false
+  BASE_URL: "https://api.openai.com/v1"
+  MODEL: ""
+  TIMEOUT: 120
+  MAX_TOOL_ROUNDS: 6
+  MAX_RESULTS: 50
+  MAX_RESULT_BYTES: 51200
+  MAX_STREAMS_PER_SESSION: 2
 

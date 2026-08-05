@@ -93,6 +93,18 @@ class Config(object):
     WEB_HOOK_URL = ""
     WEB_HOOK_TOKEN = ""
 
+    # AI calls use only ARL_AI_API_KEY from the process environment.  Keeping
+    # this secret out of YAML prevents accidental commits and API disclosure.
+    AI_ENABLED = False
+    AI_BASE_URL = "https://api.openai.com/v1"
+    AI_MODEL = ""
+    AI_TIMEOUT = 120
+    AI_MAX_TOOL_ROUNDS = 6
+    AI_MAX_RESULTS = 50
+    AI_MAX_RESULT_BYTES = 50 * 1024
+    AI_MAX_STREAMS_PER_SESSION = 2
+    AI_RETENTION_DAYS = 90
+
 
 try:
     with open(os.path.join(basedir, 'config.yaml')) as f:
@@ -121,6 +133,17 @@ try:
     Config.AUTH = y["ARL"]["AUTH"]
     Config.API_KEY = y["ARL"]["API_KEY"]
     Config.BLACK_IPS = y["ARL"]["BLACK_IPS"]
+    Config.FORBIDDEN_DOMAINS = y["ARL"].get("FORBIDDEN_DOMAINS") or []
+
+    ai_config = y.get("AI") or {}
+    Config.AI_ENABLED = bool(ai_config.get("ENABLED", False))
+    Config.AI_BASE_URL = ai_config.get("BASE_URL") or Config.AI_BASE_URL
+    Config.AI_MODEL = ai_config.get("MODEL") or ""
+    Config.AI_TIMEOUT = int(ai_config.get("TIMEOUT", Config.AI_TIMEOUT))
+    Config.AI_MAX_TOOL_ROUNDS = min(6, max(1, int(ai_config.get("MAX_TOOL_ROUNDS", Config.AI_MAX_TOOL_ROUNDS))))
+    Config.AI_MAX_RESULTS = min(50, max(1, int(ai_config.get("MAX_RESULTS", Config.AI_MAX_RESULTS))))
+    Config.AI_MAX_RESULT_BYTES = min(50 * 1024, max(1024, int(ai_config.get("MAX_RESULT_BYTES", Config.AI_MAX_RESULT_BYTES))))
+    Config.AI_MAX_STREAMS_PER_SESSION = min(2, max(1, int(ai_config.get("MAX_STREAMS_PER_SESSION", Config.AI_MAX_STREAMS_PER_SESSION))))
 
     # *** TOP 10 端口设置 ***
     if y["ARL"].get("PORT_TOP_10"):

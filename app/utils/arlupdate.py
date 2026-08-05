@@ -47,6 +47,13 @@ def arl_update():
     if is_run_flask_routes():
         return
 
+    # TTL/security indexes are idempotent and must not be skipped by the
+    # historical one-time update lock when upgrading an existing deployment.
+    from app.auth_session import ensure_auth_indexes
+    from app.services.ai.store import ensure_ai_indexes
+    ensure_auth_indexes()
+    ensure_ai_indexes()
+
     npoc_info_update()
 
     update_lock = os.path.join(Config.TMP_PATH, 'arl_update.lock')

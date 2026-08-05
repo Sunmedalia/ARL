@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.py[cod]
+app/config.yaml
+*.log
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+*.tsbuildinfo
+playwright-report/
+test-results/

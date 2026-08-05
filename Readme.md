@@ -89,6 +89,27 @@ wget https://raw.githubusercontent.com/adysec/ARL/master/misc/setup-arl.sh
 chmod +x setup-arl.sh
 ./setup-arl.sh
 ```
+
+### 新版控制台与 AI 服务
+
+Vue 3 控制台源码位于 `frontend/`，构建后通过 `/next/` 验收；旧控制台在迁移期继续从 `/legacy/`（以及根路径）提供。开发和构建命令：
+
+```bash
+cd frontend
+npm ci
+npm run build
+```
+
+AI 使用 OpenAI 兼容的 Chat Completions 接口。复制配置模板后，在 `AI` 段设置 `ENABLED`、`BASE_URL` 与 `MODEL`；密钥只允许通过服务环境变量提供：
+
+```bash
+export ARL_AI_API_KEY='...'
+gunicorn -b 127.0.0.1:5014 app.ai_main:ai_app \
+  -w 2 --threads 4 --worker-class gthread --timeout 130
+```
+
+生产环境可安装 `misc/arl-ai.service`，并将密钥写入仅管理员可读的 `/etc/arl/ai.env`。AI 服务关闭或配置不完整时，普通 ARL API 与旧控制台不受影响。AI 只提供固定的受限查询工具；创建扫描任务还需要管理员在当前浏览器会话与当前对话中显式开启执行授权。
+
 ### DNS爆破优化
 本机安装smartdns，以ubuntu为例
 ```

@@ -6,6 +6,11 @@ from app.utils import arl_update
 
 arl_app = Flask(__name__)
 arl_app.config['BUNDLE_ERRORS'] = True
+arl_app.config.update(
+    SESSION_COOKIE_SECURE=True,
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Strict",
+)
 
 authorizations = {
     "ApiKeyAuth": {

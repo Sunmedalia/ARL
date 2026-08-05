@@ -1,9 +1,10 @@
-from flask import request
+from flask import make_response, request
 from flask_restx import fields, Namespace
 from app.utils import get_logger
 from app import utils
 from . import  ARLResource
 from app import modules
+from app import auth_session as session_service
 
 ns = Namespace('user', description="管理员登录认证")
 
@@ -28,7 +29,18 @@ class LoginARL(ARLResource):
         args = self.parse_args(login_fields)
 
 
-        return build_data(utils.user_login(**args))
+        data = utils.user_login(**args)
+        if data and data.get("_error"):
+            status = data.pop("_status", 429)
+            message = data.pop("_error")
+            return {"message": message, "code": status, "data": {}}, status
+        session_token = data.pop("_session_token") if data else None
+        response_data = build_data(data)
+        status = 200 if data else 401
+        response = make_response(response_data, status)
+        if data:
+            session_service.set_session_cookie(response, session_token)
+        return response
 
 
 
@@ -36,6 +48,7 @@ class LoginARL(ARLResource):
 @ns.route('/logout')
 class LogoutARL(ARLResource):
 
+    @utils.auth
     def get(self):
         """
         用户退出
@@ -43,7 +56,47 @@ class LogoutARL(ARLResource):
         token = request.headers.get("Token")
         utils.user_logout(token)
 
-        return build_data({})
+        response = make_response(build_data({"logged_out": True}))
+        session_service.clear_session_cookie(response)
+        return response
+
+    def post(self):
+        session, error = session_service.session_auth(require_csrf=True)
+        if error:
+            return error
+        utils.user_logout(request.headers.get("Token"))
+        response = make_response(build_data({"logged_out": True}))
+        session_service.clear_session_cookie(response)
+        return response
+
+
+@ns.route('/session')
+class UserSession(ARLResource):
+    def get(self):
+        session, error = session_service.session_auth(require_csrf=False)
+        if error:
+            return error
+        csrf_token = session_service.csrf_token_for_session(session)
+        conversation_id = request.args.get("conversation_id")
+        grant_query = {
+            "session_id": str(session["_id"]),
+            "username": session["username"],
+            "revoked_at": None,
+            "expires_at": {"$gt": session_service.utcnow()},
+        }
+        if conversation_id:
+            grant_query["conversation_id"] = conversation_id
+        granted = bool(conversation_id and utils.conn_db("ai_grant").find_one(grant_query))
+        return {
+            "code": 200,
+            "message": "success",
+            "data": {
+                "username": session["username"],
+                "csrf_token": csrf_token,
+                "ai_granted": granted,
+                "session_expires_at": session["expires_at"].isoformat() + "Z",
+            },
+        }
 
 
 change_pass_fields = ns.model('ChangePassARL', {
@@ -55,6 +108,7 @@ change_pass_fields = ns.model('ChangePassARL', {
 
 @ns.route('/change_pass')
 class ChangePassARL(ARLResource):
+    @utils.auth
     @ns.expect(change_pass_fields)
     def post(self):
         """
@@ -100,5 +154,3 @@ def build_data(data):
         ret["code"] = 401
 
     return ret
-
-

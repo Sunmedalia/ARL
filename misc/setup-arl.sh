@@ -235,6 +235,11 @@ if [ ! -f /etc/systemd/system/arl-web.service ]; then
   cp misc/arl-web.service /etc/systemd/system/
 fi
 
+if [ ! -f /etc/systemd/system/arl-ai.service ]; then
+  echo "copy arl-ai.service"
+  cp misc/arl-ai.service /etc/systemd/system/
+fi
+
 if [ ! -f /etc/systemd/system/arl-worker.service ]; then
   echo  "copy arl-worker.service"
   cp misc/arl-worker.service /etc/systemd/system/
@@ -255,8 +260,11 @@ chmod +x /opt/ARL/app/tools/*
 
 echo "start arl services ..."
 
+systemctl daemon-reload
 systemctl enable arl-web
 systemctl restart arl-web
+systemctl enable arl-ai
+systemctl restart arl-ai
 systemctl enable arl-worker
 systemctl restart arl-worker
 systemctl enable arl-worker-github

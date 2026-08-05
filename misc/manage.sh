@@ -4,6 +4,7 @@ function start() {
     systemctl start mongod
     systemctl start rabbitmq-server
     systemctl start arl-web
+    systemctl start arl-ai
     systemctl start arl-worker
     systemctl start arl-worker-github
     systemctl start arl-scheduler
@@ -12,6 +13,7 @@ function start() {
 
 function stop() {
     systemctl stop arl-web
+    systemctl stop arl-ai
     systemctl stop arl-worker
     systemctl stop arl-worker-github
     systemctl stop arl-scheduler
@@ -23,6 +25,7 @@ function stop() {
 
 function status() {
     systemctl status arl-web
+    systemctl status arl-ai
     systemctl status arl-worker
     systemctl status arl-worker-github
     systemctl status arl-scheduler
@@ -35,6 +38,7 @@ function disable() {
     systemctl disable mongod
     systemctl disable rabbitmq-server
     systemctl disable arl-web
+    systemctl disable arl-ai
     systemctl disable arl-worker
     systemctl disable arl-worker-github
     systemctl disable arl-scheduler
@@ -45,6 +49,7 @@ function enable() {
     systemctl enable mongod
     systemctl enable rabbitmq-server
     systemctl enable arl-web
+    systemctl enable arl-ai
     systemctl enable arl-worker
     systemctl enable arl-worker-github
     systemctl enable arl-scheduler
@@ -62,6 +67,8 @@ function showLog() {
     journalctl -n 15 --no-pager -u arl-scheduler
     echo "------ arl-web server log ------"
     journalctl -n 15 --no-pager -u arl-web
+    echo "------ arl-ai server log ------"
+    journalctl -n 15 --no-pager -u arl-ai
     echo "------ arl-worker server log ------"
     journalctl -n 15 --no-pager -u arl-worker
     echo "------ arl-worker github server log ------"

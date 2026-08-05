@@ -1,3 +1,10 @@
+FROM node:22-bookworm-slim AS frontend-builder
+WORKDIR /frontend
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+COPY frontend/ ./
+RUN npm run build
+
 FROM python:3.11-slim-bookworm
 
 ENV LANG=C.UTF-8 \
@@ -15,6 +22,7 @@ COPY app/ app/
 COPY test/ test/
 COPY requirements.txt requirements.txt
 COPY docker/frontend/ frontend/
+COPY --from=frontend-builder /frontend/dist/ frontend-next/
 COPY docker/nginx.conf /etc/nginx/nginx.conf
 COPY docker/worker/gen_crt.sh /usr/bin/gen_crt.sh
 COPY docker/worker/wait-for-it.sh /usr/bin/wait-for-it.sh

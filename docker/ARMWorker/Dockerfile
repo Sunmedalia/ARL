@@ -17,6 +17,12 @@ RUN set -x;\
     && make \
     && /opt/ncrack-0.7/ncrack -V
 
+FROM node:22-bookworm-slim AS frontend-builder
+WORKDIR /frontend
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+COPY frontend/ ./
+RUN npm run build
 
 
 FROM python:3.11-slim-bookworm
@@ -40,6 +46,7 @@ COPY --from=builder /opt/ncrack-0.7/ncrack /usr/local/bin/ncrack
 COPY --from=builder /opt/ncrack-0.7/ncrack-services /usr/local/share/ncrack/ncrack-services
 COPY --from=builder /opt/massdns/bin/massdns app/tools/massdns
 COPY docker/frontend/ frontend/
+COPY --from=frontend-builder /frontend/dist/ frontend-next/
 COPY docker/nginx.conf  /etc/nginx/nginx.conf
 
 ## 复制生成ssl证书文件
