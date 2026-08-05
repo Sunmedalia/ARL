@@ -2,7 +2,7 @@ import time
 from pyquery import PyQuery as pq
 import binascii
 from urllib.parse import urljoin, urlparse
-from urllib3.util.url import parse_url, get_host
+from urllib3.util.url import parse_url
 import mmh3
 from app import utils
 from .baseThread import BaseThread
@@ -52,7 +52,10 @@ class FetchSite(BaseThread):
         if max_redirect <= 0:
             return
 
-        _, hostname, _ = get_host(site)
+        hostname = urlparse(site).hostname
+        if not hostname:
+            logger.warning("invalid site URL {}".format(site))
+            return
 
         conn = utils.http_req(site, timeout=self.http_timeout)
         item = {

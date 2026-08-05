@@ -62,7 +62,7 @@ def add_job(domain, scope_id, options=None, interval=60 * 1, name="", scope_type
         "scope_type": scope_type
 
     }
-    conn('scheduler').insert(item)
+    conn('scheduler').insert_one(item)
 
     return str(item["_id"])
 
@@ -84,7 +84,7 @@ def add_asset_site_monitor_job(scope_id, name, interval=60 * 1):
         "name": name,
         "scope_type": "site_update_monitor"
     }
-    conn('scheduler').insert(item)
+    conn('scheduler').insert_one(item)
 
     return str(item["_id"])
 
@@ -106,7 +106,7 @@ def add_asset_wih_monitor_job(scope_id, name, interval=60 * 1):
         "name": name,
         "scope_type": "wih_update_monitor"
     }
-    conn('scheduler').insert(item)
+    conn('scheduler').insert_one(item)
 
     return str(item["_id"])
 

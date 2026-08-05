@@ -19,18 +19,20 @@ RUN set -x;\
 
 
 
-FROM ubuntu:20.04
-ENV DEBIAN_FRONTEND noninteractive
-ENV LANG en_US.UTF-8
+FROM python:3.11-slim-bookworm
+ENV DEBIAN_FRONTEND=noninteractive
+ENV LANG=C.UTF-8
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
 WORKDIR /code
 
 RUN set -x;\
     apt-get update \
-    && apt-get install -y python3.8 python3-pip curl nginx nmap wget unzip \
-    && ln -s /usr/bin/python3.8 /usr/bin/python3.6 \
+    && apt-get install -y --no-install-recommends build-essential curl nginx nmap wget unzip \
     && useradd -s /bin/false nginx \
-    && nmap -v
+    && nmap -v \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY app/ app/
 COPY test/ test/
@@ -46,20 +48,21 @@ COPY docker/worker/gen_crt.sh /usr/bin/gen_crt.sh
 COPY docker/worker/wait-for-it.sh /usr/bin/wait-for-it.sh
 
 ## 复制npoc 并安装
-COPY docker/ARL-NPoC/ /opt/ARL-NPoC/
+COPY tools/ARL-NPoC/ /opt/ARL-NPoC/
 WORKDIR /opt/ARL-NPoC/
-RUN pip3 install -e .
+RUN python -m pip install -e .
 
 WORKDIR /code
 RUN curl https://ssl-config.mozilla.org/ffdhe2048.txt -o /etc/ssl/certs/dhparam.pem
 COPY requirements.txt requirements.txt
-COPY docker/GeoLite2/ /data/GeoLite2/
-RUN pip3 install -r requirements.txt
+COPY tools/GeoLite2-ASN.mmdb /data/GeoLite2/GeoLite2-ASN.mmdb
+COPY tools/GeoLite2-City.mmdb /data/GeoLite2/GeoLite2-City.mmdb
+RUN python -m pip install -r requirements.txt
 
 
 ## 安装 NPoC 的依赖
 WORKDIR /opt/ARL-NPoC/
-RUN pip3 install -r requirements.txt
+RUN python -m pip install -r requirements.txt
 
 # 定义nuclei版本
 ARG NUCLEI_VERSION=3.2.4
@@ -82,5 +85,5 @@ WORKDIR /code
 
 ## 自测一下
 RUN cp app/config.yaml.example app/config.yaml
-RUN env FLASK_APP=app.main:arl_app python3.6 -m flask routes
-RUN python3 -m app.celerytask
+RUN env FLASK_APP=app.main:arl_app python -m flask routes
+RUN python -m app.celerytask

@@ -10,7 +10,7 @@ MONGO:
 
 
 # 利用三方API进行域名收集
-# 测试命令 python3.6 -m test.test_query_plugin [source1] [source2]
+# 测试命令 python3.11 -m test.test_query_plugin [source1] [source2]
 # 域名查询插件配置, enable 字段可以单独控制是否启用该插件，如果没有这个字段也会默认启用
 QUERY_PLUGIN:
   alienvault:
@@ -133,6 +133,5 @@ ARL:
   DOMAIN_BRUTE_CONCURRENT: 300
   #组合生成的域名爆破并发数
   ALT_DNS_CONCURRENT: 1500
-
 
 

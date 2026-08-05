@@ -1,5 +1,7 @@
 set -e
 
+PYTHON_VERSION="${PYTHON_VERSION:-3.11.12}"
+
 cd /etc/yum.repos.d/
 sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-*
 sed -i 's|baseurl=http://.*centos.org|baseurl=https://mirrors.adysec.com/system/centos|g' /etc/yum.repos.d/CentOS-*
@@ -82,19 +84,32 @@ yum update -y
 yum install epel-release -y
 yum install systemd -y
 yum install rabbitmq-server --nobest -y
-yum install python36 mongodb-org-server mongodb-org-shell python36-devel gcc-c++ git nginx fontconfig wqy-microhei-fonts unzip wget -y
+yum install mongodb-org-server mongodb-org-shell gcc gcc-c++ git nginx fontconfig \
+  wqy-microhei-fonts unzip wget curl make tar openssl-devel bzip2-devel \
+  libffi-devel zlib-devel xz-devel readline-devel sqlite-devel -y
 
-if [ ! -f /usr/bin/python3.6 ]; then
-  echo "link python3.6"
-  ln -s /usr/bin/python36 /usr/bin/python3.6
+if ! command -v python3.11 &> /dev/null; then
+  echo "install Python ${PYTHON_VERSION} from source"
+  cd /tmp
+  curl -fsSLO "https://www.python.org/ftp/python/${PYTHON_VERSION}/Python-${PYTHON_VERSION}.tgz"
+  tar -xzf "Python-${PYTHON_VERSION}.tgz"
+  cd "Python-${PYTHON_VERSION}"
+  ./configure --with-ensurepip=install
+  make -j"$(nproc)"
+  make altinstall
+  cd /tmp
+  rm -rf "Python-${PYTHON_VERSION}" "Python-${PYTHON_VERSION}.tgz"
 fi
 
-if [ ! -f /usr/local/bin/pip3.6 ]; then
-  echo "install  pip3.6"
-  python3.6 -m ensurepip --default-pip
-  python3.6 -m pip install --upgrade pip
-  pip3.6 config --global set global.index-url https://mirrors.adysec.com/language/pypi
-  pip3.6 --version
+PYTHON_BIN="$(command -v python3.11)"
+"${PYTHON_BIN}" -m pip install --upgrade pip
+"${PYTHON_BIN}" -m pip config --global set global.index-url https://mirrors.adysec.com/language/pypi
+"${PYTHON_BIN}" -m pip --version
+
+# The systemd unit uses the stable /usr/bin path regardless of whether Python
+# came from an RPM or was compiled into /usr/local.
+if [ ! -x /usr/bin/python3.11 ]; then
+  ln -s "${PYTHON_BIN}" /usr/bin/python3.11
 fi
 
 if ! command -v nmap &> /dev/null
@@ -142,8 +157,8 @@ fi
 
 cd /opt/ARL-NPoC
 echo "install poc requirements ..."
-pip3.6 install -r requirements.txt
-pip3.6 install -e .
+"${PYTHON_BIN}" -m pip install -r requirements.txt
+"${PYTHON_BIN}" -m pip install -e .
 cd ../
 
 if [ ! -f /usr/local/bin/ncrack ]; then
@@ -183,7 +198,7 @@ if [ ! -f rabbitmq_user ]; then
 fi
 
 echo "install arl requirements ..."
-pip3.6 install -r requirements.txt
+"${PYTHON_BIN}" -m pip install -r requirements.txt
 if [ ! -f app/config.yaml ]; then
   echo "create config.yaml"
   cp app/config.yaml.example  app/config.yaml
@@ -251,7 +266,7 @@ systemctl restart arl-scheduler
 systemctl enable nginx
 systemctl restart nginx
 
-python3.6 tools/add_finger.py
-python3.6 tools/add_finger_ehole.py
+"${PYTHON_BIN}" tools/add_finger.py
+"${PYTHON_BIN}" tools/add_finger_ehole.py
 
 echo "install done"

@@ -2,11 +2,11 @@
 
 ## Project Structure & Module Organization
 
-ARL is a Python 3.6 Flask/Celery service backed by MongoDB and RabbitMQ. Application code lives in `app/`: routes are in `app/routes/`, business logic in `app/services/`, helpers in `app/helpers/`, models in `app/modules/`, and utilities in `app/utils/`. Runtime dictionaries and tools are under `app/dicts/` and `app/tools/`. Integrations live in `tools/`; standalone utilities are in `arl_tool/`. Tests are in `test/`, deployment files in `docker/` and `misc/`, and UI assets in `image/`.
+ARL is a Python 3.11 Flask/Celery service backed by MongoDB and RabbitMQ. Application code lives in `app/`: routes are in `app/routes/`, business logic in `app/services/`, helpers in `app/helpers/`, models in `app/modules/`, and utilities in `app/utils/`. Runtime dictionaries and tools are under `app/dicts/` and `app/tools/`. Integrations live in `tools/`; standalone utilities are in `arl_tool/`. Tests are in `test/`, deployment files in `docker/` and `misc/`, and UI assets in `image/`.
 
 ## Build, Test, and Development Commands
 
-- `python3.6 -m venv .venv && . .venv/bin/activate`: create and activate a virtual environment.
+- `python3.11 -m venv .venv && . .venv/bin/activate`: create and activate a virtual environment.
 - `pip install -r requirements.txt`: install pinned dependencies.
 - `cp app/config.yaml.example app/config.yaml`: create local configuration.
 - `python -m unittest discover -s test -p 'test_*.py'`: run the full unit test suite.

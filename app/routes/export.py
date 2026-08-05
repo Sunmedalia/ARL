@@ -4,9 +4,9 @@ from flask import  make_response
 from flask_restx import Resource, Namespace
 from openpyxl import Workbook
 from bson import ObjectId
+from io import BytesIO
 import re
 from collections import Counter
-from openpyxl.writer.excel import save_virtual_workbook
 from openpyxl.styles import Font, Color
 from app.utils import get_logger, auth
 from app import utils
@@ -383,7 +383,9 @@ class SaveTask(object):
 
         self.build_statist()
 
-        return save_virtual_workbook(self.wb)
+        output = BytesIO()
+        self.wb.save(output)
+        return output.getvalue()
 
 
 def export_arl(task_id):

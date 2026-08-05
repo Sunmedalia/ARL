@@ -21,7 +21,7 @@ setuptools.setup(
     classifiers=[
         "Programming Language :: Python :: 3"
     ],
-    python_requires='>=3.6',
+    python_requires='>=3.11',
     entry_points={
         "console_scripts": [
             "xing=xing.main:main"

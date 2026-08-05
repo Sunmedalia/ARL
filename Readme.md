@@ -5,6 +5,8 @@
 
 ARL资产侦察灯塔系统备份项目，**已跑通**
 
+当前运行时已升级到 **Python 3.11**。源码部署请使用 Python 3.11 或更高的兼容版本，推荐使用仓库 `.python-version` 指定的 3.11。
+
 ### 简介
 旨在快速侦察与目标关联的互联网资产，构建基础资产信息库。
 协助甲方安全团队或者渗透测试人员有效侦察和检索资产，发现存在的薄弱点和攻击面。
@@ -29,6 +31,17 @@ ARL删库后，备份项目使用到ARL-NPoC、arl_files等项目，无法跑通
 
 建议采用**Docker内源码安装**或**Docker内源码安装**方式运行。系统配置建议：CPU:4线程 内存:8G 带宽:10M。
 由于自动资产发现过程中会有大量的的发包，建议采用云服务器可以带来更好的体验。
+
+运行时要求 Python 3.11。开发环境可以使用以下命令创建：
+
+```bash
+python3.11 -m venv .venv
+. .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
+
+项目暂时保留 MongoDB 4.0 兼容性，因此使用最后支持 MongoDB 4.0 的 PyMongo 4.12 系列；后续升级 MongoDB 后可再更新驱动。
 ### Docker 安装（快速）
 ```bash
 docker run --privileged -it -d -p 5003:5003 --name=arl --restart=always docker.adysec.com/adysec/arl /usr/sbin/init
@@ -114,7 +127,7 @@ systemctl restart arl*
 
 # 改指纹，/opt/ARL/tools/指纹数据.json
 docker exec -it arl bash
-cd /opt/ARL && python3.6 tools/add_finger.py
+cd /opt/ARL && python3.11 tools/add_finger.py
 ```
 ### 特性
 
@@ -187,4 +200,3 @@ cd /opt/ARL && python3.6 tools/add_finger.py
 ### FAQ
 
 请访问如下链接[FAQ](https://tophanttechnology.github.io/ARL-doc/faq/)  
-

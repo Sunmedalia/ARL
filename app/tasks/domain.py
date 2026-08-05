@@ -746,7 +746,7 @@ class DomainTask(CommonTask):
                                                                      'product': _info.product,
                                                                      'version': _info.version})
         if self.service_info_list:
-            utils.conn_db('service').insert(self.service_info_list)
+            utils.conn_db('service').insert_many(self.service_info_list)
 
     def ssl_cert(self):
         if self.options.get("port_scan"):

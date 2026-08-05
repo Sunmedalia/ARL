@@ -195,7 +195,7 @@ class IPTask(CommonTask):
                                                                     'product': _info.get("product"),
                                                                     'version': _info.get("version")})
         if self.service_info_list:
-            utils.conn_db('service').insert(self.service_info_list)
+            utils.conn_db('service').insert_many(self.service_info_list)
 
     def npoc_service_detection(self):
         targets = []

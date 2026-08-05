@@ -1,8 +1,8 @@
 from app.utils import get_logger
-from pyparsing import CaselessLiteral, Word, alphas,\
-    nums, QuotedString, Group,ParserElement, infixNotation, opAssoc, ParseException
+from pyparsing import CaselessLiteral, Word, alphas, \
+    nums, QuotedString, Group, ParserElement, infix_notation, OpAssoc, ParseException
 
-ParserElement.enablePackrat()
+ParserElement.enable_packrat()
 
 
 logger = get_logger()
@@ -28,15 +28,15 @@ value = quoted_string | integer
 
 
 # 定义表达式语法
-bool_expr = infixNotation(
+bool_expr = infix_notation(
     Group(variable + equals + value) |
     Group(variable + contains + value) |
     Group(variable + not_contains + value) |
     Group(not_op + variable),
     [
-        (not_op, 1, opAssoc.RIGHT),
-        (and_op, 2, opAssoc.LEFT),
-        (or_op, 2, opAssoc.LEFT),
+        (not_op, 1, OpAssoc.RIGHT),
+        (and_op, 2, OpAssoc.LEFT),
+        (or_op, 2, OpAssoc.LEFT),
     ]
 )
 
@@ -69,7 +69,7 @@ def unquote_string(s):
 
 # 解析表达式
 def parse_expression(expression):
-    result = bool_expr.parseString(expression, parseAll=True)
+    result = bool_expr.parse_string(expression, parse_all=True)
     return result.as_list()
 
 
@@ -128,4 +128,3 @@ def check_expression_with_error(expression):
         return True, None,
     except ValueError as e:
         return False, e
-
