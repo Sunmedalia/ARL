@@ -1,98 +1,161 @@
-## ARL(Asset Reconnaissance Lighthouse)资产侦察灯塔系统
-<a href="https://github.com/adysec/ARL/stargazers"><img alt="GitHub Repo stars" src="https://img.shields.io/github/stars/adysec/ARL?color=yellow&logo=riseup&logoColor=yellow&style=flat-square"></a>
-<a href="https://github.com/adysec/ARL/network/members"><img alt="GitHub forks" src="https://img.shields.io/github/forks/adysec/ARL?color=orange&style=flat-square"></a>
-<a href="https://github.com/adysec/ARL/issues"><img alt="GitHub issues" src="https://img.shields.io/github/issues/adysec/ARL?color=red&style=flat-square"></a>
+# ARL · 资产侦察灯塔
 
-ARL资产侦察灯塔系统备份项目，**已跑通**
+<p align="left">
+  <a href="https://github.com/Sunmedalia/ARL/stargazers"><img alt="GitHub Stars" src="https://img.shields.io/github/stars/Sunmedalia/ARL?style=flat-square"></a>
+  <a href="https://github.com/Sunmedalia/ARL/issues"><img alt="GitHub Issues" src="https://img.shields.io/github/issues/Sunmedalia/ARL?style=flat-square"></a>
+  <img alt="Python 3.11" src="https://img.shields.io/badge/Python-3.11-3776AB?style=flat-square&logo=python&logoColor=white">
+  <img alt="Vue 3" src="https://img.shields.io/badge/Vue-3-42b883?style=flat-square&logo=vuedotjs&logoColor=white">
+</p>
 
-当前运行时已升级到 **Python 3.11**。源码部署请使用 Python 3.11 或更高的兼容版本，推荐使用仓库 `.python-version` 指定的 3.11。
+ARL（Asset Reconnaissance Lighthouse）是面向安全团队的资产侦察与暴露面管理平台。它将域名发现、IP 与端口探测、站点识别、漏洞结果、资产监控和计划任务汇总到统一控制台，并提供受限、可审计的原生 AI 助手。
 
-### 简介
-旨在快速侦察与目标关联的互联网资产，构建基础资产信息库。
-协助甲方安全团队或者渗透测试人员有效侦察和检索资产，发现存在的薄弱点和攻击面。
+> 本仓库是 ARL 的可运行维护分支，当前运行时为 Python 3.11。仅对已获得明确授权的目标执行侦察或扫描。
 
-ARL删库后，备份项目使用到ARL-NPoC、arl_files等项目，无法跑通，大多数人使用docker运行ARL，docker镜像同样被删除，无法拉取镜像，需要修改安装脚本调试环境
-### 修改内容
-1. 用新不用旧，更新为centos8版本运行(docker内的centos7起不来systemctl)
-2. docker运行模式改为单docker镜像，无需安装docker-compose(对于大多数人只用一台服务器的场景下，前后端分离没有必要)
-3. 修改centos软件源使用cloudflare代理(家里的电脑连官方源巨慢)
-4. 修改pip源使用cloudflare代理(国内服务器经常连不上pypi源)
-5. 加入指纹库(eHole`1017`、ehole_magic`24981`、EHole_magic_magic`25715`、FingerprintHub`2839`、dismap`4598`，去重后`21545`，可以手动更新，使用ARL导出的格式，有新指纹可以提issue，或者直接改json文件通过docker内源码安装)`docker快速安装没有ehole_magic相关指纹，去重后5k多，可以手动更新`
-6. nmap使用最新版本(顺手的事，能yum装新的干嘛rpm装老的)
-7. nuclei使用最新版本(通过github action每日更新)
-8. ARL-NPoC、arl_files、geoip均移至tools目录下(建一堆项目太麻烦，且使用github action每日更新)
-9. 工具增加执行权限(原安装脚本有坑，部分工具没执行权限，运行任务会显示error状态)
-10. 提高数据库连接超时时间(看别人二开是这么做的，实际上没感觉到区别，原版1c1g照冲不误)
-11. 删除域名及ip段限制，12000ms超时问题已解决(不会有人喜欢自己的工具受限制吧)
-12. 提高工具并发数(大部分都是云服务器跑的，并发性能足够，已测试)`如果经常出现加入大量任务后超时的情况，请通过arl-worker.service降低并发数`
-13. 使用cloudflare代理docker官方源(因为总所周知的原因，docker源目前国内用不了)
+## 目录
 
-### 系统要求
+- [核心能力](#核心能力)
+- [系统架构](#系统架构)
+- [运行要求](#运行要求)
+- [快速开始](#快速开始)
+- [生产部署](#生产部署)
+- [新版控制台](#新版控制台)
+- [AI 控制台](#ai-控制台)
+- [配置说明](#配置说明)
+- [服务管理](#服务管理)
+- [开发与测试](#开发与测试)
+- [项目结构](#项目结构)
+- [安全说明](#安全说明)
+- [常见问题](#常见问题)
 
-建议采用**Docker内源码安装**或**Docker内源码安装**方式运行。系统配置建议：CPU:4线程 内存:8G 带宽:10M。
-由于自动资产发现过程中会有大量的的发包，建议采用云服务器可以带来更好的体验。
+## 核心能力
 
-运行时要求 Python 3.11。开发环境可以使用以下命令创建：
+| 类别 | 能力 |
+| --- | --- |
+| 资产发现 | 域名枚举、DNS 插件查询、IP/IP 段整理、端口扫描、服务与操作系统识别 |
+| Web 资产 | HTTP 探测、站点截图、指纹识别、URL 爬取、搜索引擎补充、Host 碰撞 |
+| 风险发现 | 文件泄漏、Nuclei、NPoC、弱口令插件、WebInfoHunter |
+| 资产运营 | 资产分组、策略、计划任务、域名/IP/站点变化监控、结果导出 |
+| 外部情报 | GitHub 关键字搜索与周期监控、FOFA 与多种域名数据源 |
+| AI 助手 | 自然语言查询 ARL 数据、工具调用时间线、显式授权后创建资产发现任务 |
+
+常用扫描选项包括：
+
+- 域名爆破、智能字典生成、历史结果复用和第三方域名查询插件；
+- 测试端口、Top 100、Top 1000、全端口和自定义端口；
+- 服务识别、操作系统识别、SSL 证书采集和 CDN IP 跳过；
+- 站点识别、截图、爬虫、文件泄漏、Nuclei 和 WebInfoHunter。
+
+## 系统架构
+
+```mermaid
+flowchart LR
+    U[浏览器 / API 客户端] --> N[Nginx :5003]
+    N --> W[ARL Web API :5013]
+    N --> A[ARL AI SSE :5014]
+    W --> M[(MongoDB)]
+    A --> M
+    A --> O[OpenAI 兼容接口]
+    W --> R[(RabbitMQ)]
+    R --> C[Celery Workers]
+    C --> M
+    S[Scheduler] --> R
+```
+
+主要进程：
+
+| 服务 | 作用 | 默认监听/队列 |
+| --- | --- | --- |
+| `arl-web` | Flask/RESTX 普通 API | `127.0.0.1:5013` |
+| `arl-ai` | AI 对话与 SSE 流 | `127.0.0.1:5014` |
+| `arl-worker` | 资产发现任务 | `arltask` |
+| `arl-worker-github` | GitHub 任务 | `arlgithub` |
+| `arl-scheduler` | 周期任务调度 | 内部服务 |
+| Nginx | TLS、静态资源和反向代理 | `5003` |
+
+AI 服务与普通 API 分离；模型服务不可用时，不影响资产查询、任务和其他 ARL 功能。
+
+## 运行要求
+
+### 基础组件
+
+- Python 3.11；
+- MongoDB；
+- RabbitMQ；
+- Nmap、MassDNS、Nuclei、NPoC、WebInfoHunter 等扫描工具；
+- 构建新版前端时需要 Node.js 22 和 npm。
+
+项目当前保留 MongoDB 4.0 兼容性，因此固定使用 PyMongo 4.12 系列。
+
+### 建议配置
+
+生产或较大规模任务建议至少使用：
+
+- 4 核 CPU；
+- 8 GB 内存；
+- 10 Mbps 网络；
+- 独立数据盘保存 MongoDB 数据。
+
+实际资源消耗取决于目标数量、端口范围、并发设置和启用的扫描模块。请根据授权范围控制扫描速率。
+
+## 快速开始
+
+以下流程适用于本地开发。MongoDB、RabbitMQ 和依赖的扫描工具需要预先准备。
+
+### 1. 创建 Python 环境
 
 ```bash
+git clone https://github.com/Sunmedalia/ARL.git
+cd ARL
+
 python3.11 -m venv .venv
 . .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
 
-项目暂时保留 MongoDB 4.0 兼容性，因此使用最后支持 MongoDB 4.0 的 PyMongo 4.12 系列；后续升级 MongoDB 后可再更新驱动。
-### Docker 安装（快速）
+### 2. 创建配置
+
 ```bash
-docker run --privileged -it -d -p 5003:5003 --name=arl --restart=always docker.adysec.com/adysec/arl /usr/sbin/init
-docker exec -it arl bash
-# docker内运行，上传docker镜像会隐去硬编码的数据库连接密码，因此需要重设密码
-rabbitmqctl start_app
-# 建议执行后隔一会再运行下面的命令，否则可能报错
-rabbitmqctl add_user arl arlpassword
-rabbitmqctl add_vhost arlv2host
-rabbitmqctl set_user_tags arl arltag
-rabbitmqctl set_permissions -p arlv2host arl ".*" ".*" ".*"
-cd /etc/systemd/system && systemctl restart arl*
-exit
-```
-如遇mongod服务问题导致`timeout of 12000ms exceeded`，请尝试在docker启动中加入路径`-v /sys/fs/cgroup:/sys/fs/cgroup`
-
-**由于docker hub新增流控策略，如遇到国内网络问题导致镜像无法拉取，建议自行搭建官方docker源代理**
-```
-搭建方式参考https://github.com/adysec/mirror
-使用方式参考https://mirror.adysec.com/container/docker-hub/
+cp app/config.yaml.example app/config.yaml
 ```
 
-### Docker 内源码安装（最新版，需要为境外网络环境，且网络稳定）
+至少检查以下配置：
 
-```bass
-docker run --privileged -it -d -p 5003:5003 --name=arl --restart=always docker.adysec.com/library/centos /usr/sbin/init
-docker exec -it arl bash
-# docker内运行，通过源码安装ARL
-curl https://raw.githubusercontent.com/adysec/ARL/master/misc/setup-arl.sh >install.sh
-bash install.sh
-exit
+- `MONGO.URI` 与 `MONGO.DB`；
+- `CELERY.BROKER_URL`；
+- `ARL.AUTH`、`ARL.API_KEY`、`ARL.BLACK_IPS` 和 `ARL.FORBIDDEN_DOMAINS`；
+- GeoIP、字典和外部工具路径；
+- 需要启用的域名查询插件及其密钥。
+
+`app/config.yaml` 已被 Git 忽略，不要将真实凭据提交到仓库。
+
+### 3. 启动后端
+
+开发服务器：
+
+```bash
+python -m app.main
 ```
 
-docker内执行后直接exit退出即可
+默认监听 `0.0.0.0:5018`。生产风格启动方式：
 
-Ubuntu 下可以直接执行 `apt-get install docker.io docker-compose -y` 安装相关依赖
-
-### 源码安装
-
-原版ARL仅适配centos 7，我更新至仅支持centos8（centos:latest）
-如果在其他目录可以创建软连接，且安装了四个服务分别为`arl-web`, `arl-worker`, `arl-worker-github`, `arl-scheduler`
-
-```
-wget https://raw.githubusercontent.com/adysec/ARL/master/misc/setup-arl.sh
-chmod +x setup-arl.sh
-./setup-arl.sh
+```bash
+gunicorn -b 127.0.0.1:5013 app.main:arl_app -w 4
 ```
 
-### 新版控制台与 AI 服务
+### 4. 启动 Worker 与调度器
 
-Vue 3 控制台源码位于 `frontend/`，构建后通过 `/next/` 验收；旧控制台在迁移期继续从 `/legacy/`（以及根路径）提供。开发和构建命令：
+```bash
+celery -A app.celerytask.celery worker \
+  -l info -Q arltask -n arltask -c 5 -O fair
+
+celery -A app.celerytask.celery worker \
+  -l info -Q arlgithub -n arlgithub -c 3 -O fair
+
+python -m app.scheduler
+```
+
+### 5. 构建新版前端
 
 ```bash
 cd frontend
@@ -100,124 +163,312 @@ npm ci
 npm run build
 ```
 
-AI 使用 OpenAI 兼容的 Chat Completions 接口。复制配置模板后，在 `AI` 段设置 `ENABLED`、`BASE_URL` 与 `MODEL`；密钥只允许通过服务环境变量提供：
+仓库中的 `frontend-dist/` 是已验证的构建产物，源码部署可直接由 Nginx 提供。
+
+## 生产部署
+
+### 自动安装脚本
+
+`misc/setup-arl.sh` 面向支持 `yum` 和 systemd 的 CentOS/RHEL 兼容环境，会安装系统依赖、初始化服务并写入 systemd 单元。建议先阅读脚本，再在全新的专用主机或容器中运行：
 
 ```bash
-export ARL_AI_API_KEY='...'
+git clone https://github.com/Sunmedalia/ARL.git /opt/ARL
+cd /opt/ARL
+sudo bash misc/setup-arl.sh
+```
+
+脚本会修改软件源、安装系统软件并启停服务，不建议直接在承载其他业务的主机上运行。
+
+### Docker 构建
+
+仓库保留以下容器构建文件：
+
+- `docker/worker/Dockerfile`：x86_64 构建；
+- `docker/ARMWorker/Dockerfile`：ARM64 构建；
+- `docker/nginx.conf`：容器内 Nginx 配置；
+- `docker/config-docker.yaml`：容器配置示例。
+
+构建上下文需要包含 `tools/` 下的扫描器、GeoIP 数据和 NPoC 依赖。生产环境应通过挂载或密钥管理系统注入配置，避免将密码和 Token 写入镜像。
+
+### 初始管理员
+
+使用 `docker/mongo-init.js` 初始化数据库时，默认管理员为：
+
+- 用户名：`admin`
+- 密码：`arlpass`
+
+首次登录后必须立即修改密码。首次成功登录会将旧版 MD5 密码自动迁移为 Werkzeug scrypt 哈希。
+
+## 新版控制台
+
+新版 Vue 3 控制台位于 `frontend/`，使用 TypeScript、Vue Router、Pinia 和 Ant Design Vue。
+
+| 路径 | 用途 |
+| --- | --- |
+| `/next/` | 新版控制台，当前用于迁移验收 |
+| `/legacy/` | 旧版控制台 |
+| `/` | 迁移期继续提供旧版控制台 |
+| `/api/doc` | REST API 文档 |
+
+新版控制台覆盖资产、任务、资产组、监控、策略、计划任务、指纹、PoC、漏洞、GitHub 和 AI 页面。统一 API 客户端负责会话失效、CSRF、分页、请求取消和 SSE 解析。
+
+前端开发服务器：
+
+```bash
+cd frontend
+npm run dev
+```
+
+## AI 控制台
+
+AI 使用 OpenAI 兼容的 Chat Completions 接口。模型密钥只能从 `ARL_AI_API_KEY` 环境变量读取，不能写入 `app/config.yaml`。
+
+### 1. 启用配置
+
+编辑 `app/config.yaml`：
+
+```yaml
+AI:
+  ENABLED: true
+  BASE_URL: "https://api.openai.com/v1"
+  MODEL: "your-model-name"
+  TIMEOUT: 120
+  MAX_TOOL_ROUNDS: 6
+  MAX_RESULTS: 50
+  MAX_RESULT_BYTES: 51200
+  MAX_STREAMS_PER_SESSION: 2
+```
+
+### 2. 设置密钥
+
+手动启动：
+
+```bash
+export ARL_AI_API_KEY='your-api-key'
 gunicorn -b 127.0.0.1:5014 app.ai_main:ai_app \
   -w 2 --threads 4 --worker-class gthread --timeout 130
 ```
 
-生产环境可安装 `misc/arl-ai.service`，并将密钥写入仅管理员可读的 `/etc/arl/ai.env`。AI 服务关闭或配置不完整时，普通 ARL API 与旧控制台不受影响。AI 只提供固定的受限查询工具；创建扫描任务还需要管理员在当前浏览器会话与当前对话中显式开启执行授权。
+systemd 部署可创建仅管理员可读的 `/etc/arl/ai.env`：
 
-### DNS爆破优化
-本机安装smartdns，以ubuntu为例
+```text
+ARL_AI_API_KEY=your-api-key
 ```
-apt install smartdns -y
-curl https://raw.githubusercontent.com/adysec/ARL/refs/heads/master/tools/smartdns.conf > /etc/smartdns/smartdns.conf
-systemctl restart smartdns
-docker exec -it arl bash
-#docker内运行
-tee /etc/resolv.conf <<"EOF"
-nameserver 本机ip
-nameserver 180.76.76.76
-nameserver 4.2.2.1
-nameserver 1.1.1.1
-EOF
+
+然后启动服务：
+
+```bash
+sudo chmod 600 /etc/arl/ai.env
+sudo systemctl daemon-reload
+sudo systemctl enable --now arl-ai
 ```
-### 查看服务状态
 
+### 3. 工具与权限边界
+
+AI 只允许调用固定工具：
+
+- 查询任务列表、状态和详情；
+- 查询域名、IP、站点、服务和 URL；
+- 查询漏洞、Nuclei、文件泄漏、WIH 和 GitHub 结果；
+- 查询资产组、策略及 PoC/爆破插件；
+- 在显式授权后创建资产发现任务。
+
+AI 不具备以下能力：
+
+- 生成或执行任意 MongoDB 查询；
+- 请求任意 URL；
+- 执行系统命令；
+- 调用任意 ARL 接口；
+- 停止、删除或重启任务。
+
+创建任务的授权绑定当前管理员、浏览器会话和当前对话，可随时撤销。工具参数、结果和授权操作会写入审计集合，并通过 TTL 索引保留 90 天。
+
+### 4. AI API
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `GET` | `/api/ai/status` | AI 配置与可用状态 |
+| `GET` | `/api/ai/conversations` | 对话列表 |
+| `GET` | `/api/ai/conversations/<id>` | 消息和工具记录 |
+| `DELETE` | `/api/ai/conversations/<id>` | 删除本人对话 |
+| `POST` | `/api/ai/chat/stream` | SSE 流式对话 |
+| `POST` | `/api/ai/grant` | 开启当前对话执行授权 |
+| `DELETE` | `/api/ai/grant` | 撤销执行授权 |
+
+SSE 事件固定为：`message_start`、`text_delta`、`tool_start`、`tool_result`、`action`、`done` 和 `error`。
+
+## 配置说明
+
+主要配置文件为 `app/config.yaml`，模板为 `app/config.yaml.example`。
+
+| 配置段 | 用途 |
+| --- | --- |
+| `MONGO` | MongoDB URI 与数据库名 |
+| `CELERY` | RabbitMQ/Celery Broker |
+| `ARL` | 鉴权、API Key、目标黑名单、字典和并发参数 |
+| `AI` | AI 开关、接口地址、模型和资源限制，不包含密钥 |
+| `FOFA` | FOFA 地址、Key 和分页限制 |
+| `QUERY_PLUGIN` | 域名查询数据源及各插件参数 |
+| `GEOIP` | ASN 与 City 数据库路径 |
+| `GITHUB` | GitHub 搜索 Token |
+| `PROXY` | HTTP 代理 |
+| `DINGDING` / `FEISHU` / `WXWORK` / `EMAIL` | 消息通知 |
+| `WEBHOOK` | 监控任务回调 |
+
+敏感配置原则：
+
+- 不提交 `app/config.yaml`；
+- 不提交 API Key、Token、密码、证书私钥和本地日志；
+- AI 密钥只使用 `ARL_AI_API_KEY`；
+- 修改配置或部署文件后先检查 `git diff`。
+
+## 服务管理
+
+安装 systemd 单元后，可以使用：
+
+```bash
+systemctl status arl-web arl-ai arl-worker arl-worker-github arl-scheduler
+systemctl restart arl-web arl-ai arl-worker arl-worker-github arl-scheduler
 ```
-systemctl status arl-web
-systemctl status arl-worker
-systemctl status arl-worker-github
-systemctl status arl-scheduler
+
+也可以使用仓库脚本：
+
+```bash
+bash misc/manage.sh status
+bash misc/manage.sh restart
+bash misc/manage.sh log
 ```
-### ARL修改
 
+常见日志：
+
+- `arl_web.log`：普通 API；
+- `arl_ai.log`：AI SSE 服务；
+- `arl_worker.log`：Celery Worker；
+- `/var/log/nginx/arl.access.log`：Nginx 访问日志。
+
+## 开发与测试
+
+### 后端
+
+```bash
+python -m unittest discover -s test -p 'test_*.py'
+python -m compileall app test
 ```
-# 一键删站
-docker stop arl && docker rm arl
 
-# 删除镜像
-docker rmi arl
+部分测试依赖 MongoDB、RabbitMQ、外部 API 或打包扫描器。提交时应注明未提供的服务和预期的外部失败。
 
-# 改poc，poc位置/opt/ARL-NPoC
-docker exec -it arl bash
-systemctl restart arl*
+### 前端
 
-# 改指纹，/opt/ARL/tools/指纹数据.json
-docker exec -it arl bash
-cd /opt/ARL && python3.11 tools/add_finger.py
+```bash
+cd frontend
+npm ci
+npm test
+npm run build
 ```
-### 特性
 
-1. 域名资产发现和整理
-2. IP/IP 段资产整理
-3. 端口扫描和服务识别
-4. WEB 站点指纹识别
-5. 资产分组管理和搜索
-6. 任务策略配置
-7. 计划任务和周期任务
-8. Github 关键字监控
-9. 域名/IP 资产监控
-10. 站点变化监控
-11. 文件泄漏等风险检测
-12. nuclei PoC 调用
-13. [WebInfoHunter](https://tophanttechnology.github.io/ARL-doc/function_desc/web_info_hunter/) 调用和监控
+### 常用开发入口
 
-### 截图
+```bash
+python -m app.main       # Flask 开发服务，端口 5018
+python -m app.ai_main    # AI 开发服务，端口 5014
+```
 
-1. 登录页面     
-   默认端口5003 (https), 默认用户名密码admin/arlpass  
-   ![登录页面](./image/login.png)
-2. 任务页面
-   ![任务页面](./image/task.png)
-3. 子域名页面
-   ![子域名页面](./image/domain.png)
-4. 站点页面
-   ![站点页面](./image/site.png)
-5. 资产监控页面
-   ![资产监控页面](./image/monitor.png)
-   详细说明可以参考：[资产分组和监控功能使用说明](https://github.com/TophantTechnology/ARL/wiki/%E8%B5%84%E4%BA%A7%E5%88%86%E7%BB%84%E5%92%8C%E7%9B%91%E6%8E%A7%E5%8A%9F%E8%83%BD%E4%BD%BF%E7%94%A8%E8%AF%B4%E6%98%8E)
-6. 策略页面
-   ![策略配置页面](./image/policy.png)
-7. 筛选站点进行任务下发
-   ![筛选站点进行任务下发](./image/scan.png)
-   详细说明可以参考： [2.3-新添加功能详细说明](https://github.com/TophantTechnology/ARL/wiki/ARL-2.3-%E6%96%B0%E6%B7%BB%E5%8A%A0%E5%8A%9F%E8%83%BD%E8%AF%A6%E7%BB%86%E8%AF%B4%E6%98%8E)
-8. 计划任务
-   ![计划任务](./image/task_scheduler.png)
-   详细说明可以参考： [2.4.1-新添加功能详细说明](https://github.com/TophantTechnology/ARL/wiki/ARL-2.4.1-%E6%96%B0%E6%B7%BB%E5%8A%A0%E5%8A%9F%E8%83%BD%E8%AF%A6%E7%BB%86%E8%AF%B4%E6%98%8E)
-9. GitHub 监控任务
-   ![GitHub 监控任务](./image/github_monitor.png)
+## 项目结构
 
-### 任务选项说明
+```text
+ARL/
+├── app/
+│   ├── routes/          # REST API 与 AI 路由
+│   ├── services/        # 业务服务和 AI 服务
+│   ├── helpers/         # 任务、策略和资产辅助逻辑
+│   ├── modules/         # 数据结构与枚举
+│   ├── tasks/           # Celery 任务
+│   ├── utils/           # 数据库、鉴权和通用工具
+│   ├── dicts/           # 字典与规则
+│   └── tools/           # 运行时工具
+├── frontend/            # Vue 3 前端源码
+├── frontend-dist/       # 新版前端构建产物
+├── docker/              # 镜像、Nginx 和容器配置
+├── misc/                # systemd、安装和管理脚本
+├── test/                # unittest 测试
+├── tools/               # 外部扫描器与集成
+└── arl_tool/            # 独立维护工具
+```
 
-| 编号 | 选项            | 说明                                                         |
-| ---- | --------------- | ------------------------------------------------------------ |
-| 1    | 任务名称        | 任务名称                                                     |
-| 2    | 任务目标        | 任务目标，支持IP，IP段和域名。可一次性下发多个目标           |
-| 3    | 域名爆破类型    | 对域名爆破字典大小, 大字典：常用2万字典大小。测试：少数几个字典，常用于测试功能是否正常 |
-| 4    | 端口扫描类型    | ALL：全部端口，TOP1000：常用top 1000端口，TOP100：常用top 100端口，测试：少数几个端口 |
-| 5    | 域名爆破        | 是否开启域名爆破                                             |
-| 6    | DNS字典智能生成 | 根据已有的域名生成字典进行爆破                               |
-| 7    | 域名查询插件    | 已支持的数据源为13个，`alienvault`, `certspotter`,`crtsh`,`fofa`,`hunter` 等 |
-| 8    | ARL 历史查询    | 对arl历史任务结果进行查询用于本次任务                        |
-| 9    | 端口扫描        | 是否开启端口扫描，不开启站点会默认探测80,443                 |
-| 10   | 服务识别        | 是否进行服务识别，有可能会被防火墙拦截导致结果为空           |
-| 11   | 操作系统识别    | 是否进行操作系统识别，有可能会被防火墙拦截导致结果为空       |
-| 12   | SSL 证书获取    | 对端口进行SSL 证书获取                                       |
-| 13   | 跳过CDN         | 对判定为CDN的IP, 将不会扫描端口，并认为80，443是端口是开放的 |
-| 14   | 站点识别        | 对站点进行指纹识别                                           |
-| 15   | 搜索引擎调用    | 利用搜索引擎搜索下发的目标爬取对应的URL和子域名              |
-| 16   | 站点爬虫        | 利用静态爬虫对站点进行爬取对应的URL                          |
-| 17   | 站点截图        | 对站点首页进行截图                                           |
-| 18   | 文件泄露        | 对站点进行文件泄露检测，会被WAF拦截                          |
-| 19   | Host 碰撞       | 对vhost配置不当进行检测                                      |
-| 20   | nuclei 调用     | 调用nuclei 默认PoC 对站点进行检测 ，会被WAF拦截，请谨慎使用该功能 |
-| 21   | WIH 调用        | 调用 WebInfoHunter 工具在JS中收集域名,AK/SK等信息            |
-| 22   | WIH 监控任务    | 对资产分组中的站点周期性 调用 WebInfoHunter 工具在JS中域名等信息进行监控 |
+## 指纹与 DNS 调优
 
-### FAQ
+### 更新指纹
 
-请访问如下链接[FAQ](https://tophanttechnology.github.io/ARL-doc/faq/)  
+```bash
+cd /opt/ARL
+python3.11 tools/add_finger.py
+python3.11 tools/add_finger_ehole.py
+systemctl restart arl-web arl-worker
+```
+
+### 使用 SmartDNS
+
+高并发域名解析可以使用本地 SmartDNS。以下仅为示例，请根据网络环境和授权范围调整：
+
+```bash
+sudo apt install smartdns
+sudo systemctl enable --now smartdns
+```
+
+将 ARL 运行环境的首选 DNS 指向 SmartDNS 地址，并保留可靠的备用解析器。不要直接复制未知来源的解析配置到生产环境。
+
+## 截图
+
+| 页面 | 预览 |
+| --- | --- |
+| 登录 | ![登录页面](./image/login.png) |
+| 任务 | ![任务页面](./image/task.png) |
+| 域名 | ![域名页面](./image/domain.png) |
+| 站点 | ![站点页面](./image/site.png) |
+| 资产监控 | ![资产监控页面](./image/monitor.png) |
+| 策略 | ![策略配置页面](./image/policy.png) |
+| 计划任务 | ![计划任务](./image/task_scheduler.png) |
+| GitHub 监控 | ![GitHub 监控任务](./image/github_monitor.png) |
+
+现有截图来自旧版控制台；新版控制台请访问 `/next/`。
+
+## 安全说明
+
+- 仅扫描自有资产或已获得书面授权的目标；
+- 使用 `ARL.BLACK_IPS` 和 `ARL.FORBIDDEN_DOMAINS` 阻止不应触达的范围；
+- 全端口、漏洞、弱口令、文件泄漏和爬虫功能可能触发告警、封禁或业务压力；
+- 生产环境必须启用 TLS、修改默认密码并限制管理端访问来源；
+- 不要将 MongoDB、RabbitMQ、普通 API 或 AI 服务直接暴露到公网；
+- 发现安全问题时请参考 [SECURITY.md](./SECURITY.md)。
+
+使用本项目即表示你同意遵守 [Disclaimer.md](./Disclaimer.md) 中的免责声明。
+
+## 常见问题
+
+### AI 页面提示不可用
+
+依次检查：
+
+1. `AI.ENABLED` 是否为 `true`；
+2. `AI.MODEL` 和 `AI.BASE_URL` 是否正确；
+3. `ARL_AI_API_KEY` 是否存在于 `arl-ai` 进程环境；
+4. `systemctl status arl-ai` 与 `arl_ai.log`；
+5. Nginx 的 `/api/ai/` 是否代理到 `127.0.0.1:5014`。
+
+### MongoDB 出现连接超时
+
+检查 MongoDB 服务、URI、认证信息和容器网络。容器使用 systemd 时，还需要确认 cgroup 挂载和权限是否正确。
+
+### 大量任务导致超时
+
+降低 `arl-worker.service` 的 Celery 并发数，缩小端口范围，并适当降低域名爆破并发。修改后重启 Worker。
+
+### 相关文档
+
+- [ARL FAQ](https://tophanttechnology.github.io/ARL-doc/faq/)
+- [WebInfoHunter 功能说明](https://tophanttechnology.github.io/ARL-doc/function_desc/web_info_hunter/)
+- [资产分组和监控说明](https://github.com/TophantTechnology/ARL/wiki/%E8%B5%84%E4%BA%A7%E5%88%86%E7%BB%84%E5%92%8C%E7%9B%91%E6%8E%A7%E5%8A%9F%E8%83%BD%E4%BD%BF%E7%94%A8%E8%AF%B4%E6%98%8E)
+
+## License
+
+许可证与第三方组件声明见 [LICENSE](./LICENSE)。
